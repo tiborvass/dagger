@@ -16,7 +16,7 @@ const (
 	flushInterval = 100 * time.Millisecond
 	queueSize     = 2048
 
-	pushURL = "https://api.dagger.cloud/events"
+	defaultPushURL = "https://api.dagger.cloud/events"
 )
 
 type Telemetry struct {
@@ -44,16 +44,18 @@ func New() *Telemetry {
 	}
 
 	if t.pushURL == "" {
-		t.pushURL = pushURL
+		t.pushURL = defaultPushURL
 	}
 
+	return t
+}
+
+func (t *Telemetry) Start() {
 	if t.token != "" {
 		// only send telemetry if a token was configured
 		t.enabled = true
 		go t.start()
 	}
-
-	return t
 }
 
 func (t *Telemetry) Enabled() bool {

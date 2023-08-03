@@ -29,6 +29,7 @@ func main() {
 	journal := args[0]
 
 	t := telemetry.New()
+	t.Start()
 
 	if !t.Enabled() {
 		fmt.Fprintln(os.Stderr, "telemetry token not configured")

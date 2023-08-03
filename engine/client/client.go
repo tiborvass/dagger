@@ -119,6 +119,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 
 	tel := telemetry.New()
+	tel.Start()
 	var cloudURL string
 	if tel.Enabled() {
 		cloudURL = tel.URL()
