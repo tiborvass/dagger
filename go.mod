@@ -70,6 +70,7 @@ require (
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.0.7
 	github.com/mackerelio/go-osstat v0.2.5
+	github.com/mark3labs/mcp-go v0.11.2
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
 	github.com/moby/locker v1.0.1
