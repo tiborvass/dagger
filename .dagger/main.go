@@ -149,7 +149,7 @@ func (gtc *GoToolchain) Lint(
 
 // Develop the Dagger engine container
 func (dev *DaggerDev) Engine() *DaggerEngine {
-	return &DaggerEngine{Dagger: dev}
+	return &DaggerEngine{Dagger: dev, LogLevel: "debug"}
 }
 
 // Develop the Dagger documentation
