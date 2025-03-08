@@ -87,6 +87,10 @@ type Params struct {
 
 	WithTerminal session.WithTerminalFunc
 
+	// wip implem
+	Stdin  io.Reader
+	Stdout io.Writer
+
 	ServeModule bool
 }
 
@@ -350,6 +354,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTunnelListenerAttachable(ctx),
 		// terminal
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
+		// pipe
+		session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout),
 		// Git credentials
 		session.NewGitCredentialAttachable(ctx),
 	}
