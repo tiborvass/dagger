@@ -740,7 +740,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.
 	}
 	platform := parent.Self.Platform
 
-	refName, err := reference.ParseNormalizedNamed(args.Address)
+	refName, err := reference.ParseDockerRef(args.Address)
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}

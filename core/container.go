@@ -291,7 +291,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 
 	platform := container.Platform
 
-	refName, err := reference.ParseNormalizedNamed(addr)
+	refName, err := reference.ParseDockerRef(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
 	}

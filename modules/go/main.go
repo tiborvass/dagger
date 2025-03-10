@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -142,7 +141,7 @@ func (p Go) Download(ctx context.Context) (Go, error) {
 		WithDirectory("", p.Source, dagger.ContainerWithDirectoryOpts{
 			Include: []string{"**/go.mod", "**/go.sum"},
 		}).
-		WithEnvVariable("CACHE_BUSTER", time.Now().Format("20060102-150405.000")).
+		//WithEnvVariable("CACHE_BUSTER", time.Now().Format("20060102-150405.000")).
 		WithExec([]string{"go", "mod", "download"}).
 		Sync(ctx)
 	if err != nil {

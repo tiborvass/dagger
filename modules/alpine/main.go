@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"path/filepath"
 	"runtime"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dev/alpine/internal/dagger"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
+	"git.sr.ht/~mariusor/cache"
 )
 
 type Distro string
@@ -43,6 +45,11 @@ func New(
 	// +optional
 	// +default="DISTRO_ALPINE"
 	distro Distro,
+
+	// Whether to use a caching HTTP client
+	// +optional
+	// +default=false
+	useCache bool,
 ) (Alpine, error) {
 	if arch == "" {
 		arch = runtime.GOARCH
@@ -69,6 +76,7 @@ func New(
 		Branch:   branch,
 		Arch:     arch,
 		Packages: packages,
+		UseCache: useCache,
 
 		GoArch: goArch,
 	}, nil
@@ -84,10 +92,22 @@ type Alpine struct {
 	Branch string
 	// The APK packages to install
 	Packages []string
+	// Whether to use a caching HTTP Client
+	UseCache bool
 
 	// the GOARCH equivalent of Arch
 	// +private
 	GoArch string
+}
+
+func (m *Alpine) httpClient() *http.Client {
+	httpClient := http.DefaultClient
+	if !m.UseCache {
+		return httpClient
+	}
+	untilEndOfTime := time.Until(time.Unix(math.MaxInt64, 0))
+	httpClient.Transport = cache.ForDuration(untilEndOfTime, httpClient.Transport, cache.FS("/run/cache/dagger-dev-http"))
+	return httpClient
 }
 
 // Build an Alpine Linux container
@@ -96,9 +116,11 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	var repos []string
 	var basePkgs []string
 
+	httpClient := m.httpClient()
+
 	switch m.Distro {
 	case DistroAlpine:
-		releases, err := alpineReleases()
+		releases, err := alpineReleases(httpClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get alpine releases: %w", err)
 		}
@@ -125,11 +147,11 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
 	}
 
-	keys, err := fetchKeys(*branch, m.Arch)
+	keys, err := fetchKeys(httpClient, *branch, m.Arch)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get keys: %w", err)
 	}
-	indexes, err := goapk.GetRepositoryIndexes(ctx, repos, keys, m.Arch, goapk.WithHTTPClient(http.DefaultClient))
+	indexes, err := goapk.GetRepositoryIndexes(ctx, repos, keys, m.Arch, goapk.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
@@ -285,11 +307,11 @@ func (m *Alpine) withPkgs(
 	return ctr, nil
 }
 
-func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, error) {
+func fetchKeys(httpClient *http.Client, branch goapk.ReleaseBranch, arch string) (map[string][]byte, error) {
 	urls := branch.KeysFor(arch, time.Now())
 	keys := make(map[string][]byte)
 	for _, u := range urls {
-		res, err := http.Get(u)
+		res, err := httpClient.Get(u)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get alpine key at %s: %w", u, err)
 		}

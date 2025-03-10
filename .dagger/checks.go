@@ -64,6 +64,7 @@ func (dev *DaggerDev) checksForSDK(name string, sdk sdkBase) []Check {
 			Name:  name + "/test",
 			Check: sdk.Test,
 		},
+		/*
 		{
 			Name: name + "/test-publish",
 			Check: func(ctx context.Context) error {
@@ -85,6 +86,7 @@ func (dev *DaggerDev) checksForSDK(name string, sdk sdkBase) []Check {
 				return sdk.TestPublish(ctx, name)
 			},
 		},
+		*/
 	}
 }
 

@@ -14,8 +14,8 @@ const (
 	alpineReleasesURL = "https://alpinelinux.org/releases.json"
 )
 
-func alpineReleases() (*goapk.Releases, error) {
-	res, err := http.Get(alpineReleasesURL)
+func alpineReleases(c *http.Client) (*goapk.Releases, error) {
+	res, err := c.Get(alpineReleasesURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get alpine releases: %w", err)
 	}

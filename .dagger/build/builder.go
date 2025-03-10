@@ -32,7 +32,27 @@ type Builder struct {
 	base       string
 	gpuSupport bool
 
-	race bool
+	race     bool
+}
+
+func pseudoversionTimestamp(t time.Time) string {
+	// go time formatting is bizarre - this translates to "yymmddhhmmss"
+	return t.Format("060102150405")
+}
+
+func getVersionTag(ctx context.Context, source *dagger.Directory) (string, string, error) {
+	next := "v0.16.3"
+	digest, err := source.Digest(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if _, newDigest, ok := strings.Cut(digest, ":"); ok {
+		digest = newDigest
+	}
+	// NOTE: the timestamp is empty here to prevent unnecessary rebuilds
+	version := fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12])
+	tag := "1ab60f070617b193bd14dcb6c247a31391ccbdb9"
+	return version, tag, nil
 }
 
 func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
@@ -73,12 +93,7 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 			"**/_build",
 		},
 	})
-	v := dag.Version()
-	version, err := v.Version(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tag, err := v.ImageTag(ctx)
+	version, tag, err := getVersionTag(ctx, source)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +187,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 				},
 				Arch: build.platformSpec.Architecture,
+				UseCache: true,
 			}).
 			Container().
 			WithExec([]string{"sh", "-c", `
@@ -187,7 +203,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 			From("ubuntu:"+consts.UbuntuVersion).
 			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
-			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
+			//WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{
 				"apt-get", "install", "-y",
@@ -389,6 +405,7 @@ func (build *Builder) cniPlugins() []*dagger.File {
 			Alpine(dagger.AlpineOpts{
 				Branch:   consts.AlpineVersion,
 				Packages: []string{"build-base", "go", "git"},
+				UseCache: true,
 			}).
 			Container()
 	case "ubuntu":
@@ -459,6 +476,7 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		Alpine(dagger.AlpineOpts{
 			Branch:   consts.AlpineVersion,
 			Packages: []string{"file"},
+			UseCache: true,
 		}).
 		Container().
 		WithMountedFile(mntPath, bin).

@@ -88,6 +88,12 @@ type Params struct {
 	WithTerminal session.WithTerminalFunc
 
 	ServeModule bool
+
+	// HttpProxyCache is the name of a dagger cache volume to back an HTTP reverse proxy cache service.
+	// If not empty, the HTTP_PROXY environment variable is set to the cache service's endpoint
+	// on all module runtime containers upon module loading.
+	// A single service is shared among all runtimes. If empty, no service is spun.
+	HttpProxyCache string
 }
 
 type Client struct {

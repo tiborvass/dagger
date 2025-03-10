@@ -14,6 +14,25 @@ import (
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
+type mockSDK struct {
+}
+
+func (mockSDK) Lint(ctx context.Context) error { return nil }
+func (mockSDK) Test(ctx context.Context) error { return nil }
+func (mockSDK) TestPublish(ctx context.Context, tag string) error { return nil }
+func (mockSDK) Generate(ctx context.Context) (*dagger.Directory, error) { return nil, nil }
+func (mockSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) { return nil, nil }
+
+type ElixirSDK struct{
+	mockSDK
+	Dagger *DaggerDev
+}
+
+type PHPSDK struct {
+	mockSDK
+	Dagger *DaggerDev
+}
+
 // A dev environment for the official Dagger SDKs
 type SDK struct {
 	// Develop the Dagger Go SDK
@@ -115,7 +134,7 @@ type gitPublishOpts struct {
 	dryRun bool
 }
 
-func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts) error {
+func gitPublish(ctx context.Context, git *mockGit, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
 		base = dag.

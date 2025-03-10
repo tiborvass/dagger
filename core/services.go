@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -175,7 +176,12 @@ dance:
 
 	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
-	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
+	forwardStderr := func(r io.Reader) {
+		go io.Copy(os.Stderr, r)
+	}
+	//forwardStderr = nil
+
+	running, err := svc.Start(svcCtx, id, false, nil, forwardStderr, forwardStderr)
 	if err != nil {
 		stop(err)
 		ss.l.Lock()
@@ -256,7 +262,7 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	switch {
 	case isRunning:
 		// running; stop it
-		return ss.stop(ctx, running, kill)
+		return ss.stopGraceful(ctx, running, 10 * time.Second)
 	case isStarting:
 		// starting; wait for the attempt to finish and then stop it
 		starting.Wait()
@@ -296,7 +302,7 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
 			// force kill the service, users should manually shutdown services if they're
 			// concerned about graceful termination
-			if err := ss.stop(ctx, svc, true); err != nil {
+			if err := ss.stop(ctx, svc, false); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil

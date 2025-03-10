@@ -4,12 +4,24 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"golang.org/x/sync/errgroup"
 )
+
+type mockHead struct{}
+
+func (mockHead) Commit(context.Context) (string, error) { return "", nil }
+
+type mockGit struct{}
+
+func (mockGit) Directory() *dagger.Directory { return nil }
+func (mockGit) Head() mockHead { return mockHead{} }
+func (mockGit) Dirty(context.Context) (bool, error) { return true, nil }
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
@@ -17,7 +29,8 @@ type DaggerDev struct {
 
 	Version string
 	Tag     string
-	Git     *dagger.VersionGit // +private
+	// *dagger.VersionGit
+	Git     *mockGit // +private
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegen        bool
@@ -26,6 +39,26 @@ type DaggerDev struct {
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
 	DockerCfg *dagger.Secret // +private
+}
+
+func pseudoversionTimestamp(t time.Time) string {
+	// go time formatting is bizarre - this translates to "yymmddhhmmss"
+	return t.Format("060102150405")
+}
+
+func getVersionTag(ctx context.Context, source *dagger.Directory) (string, string, error) {
+	next := "v0.16.3"
+	digest, err := source.Digest(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if _, newDigest, ok := strings.Cut(digest, ":"); ok {
+		digest = newDigest
+	}
+	// NOTE: the timestamp is empty here to prevent unnecessary rebuilds
+	version := fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12])
+	tag := "1ab60f070617b193bd14dcb6c247a31391ccbdb9"
+	return version, tag, nil
 }
 
 func New(
@@ -38,20 +71,20 @@ func New(
 	// +optional
 	dockerCfg *dagger.Secret,
 ) (*DaggerDev, error) {
-	v := dag.Version()
-	version, err := v.Version(ctx)
+	/*
+	next, err := source.Directory(".changes").File(".next").Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tag, err := v.ImageTag(ctx)
+	*/
+	version, tag, err := getVersionTag(ctx, source)
 	if err != nil {
 		return nil, err
 	}
-
 	dev := &DaggerDev{
 		Src:       source,
 		Tag:       tag,
-		Git:       v.Git(),
+		//Git:       v.Git(),
 		Version:   version,
 		DockerCfg: dockerCfg,
 	}

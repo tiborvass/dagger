@@ -14,7 +14,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -123,11 +122,6 @@ func parseSDKName(sdkName string) (SDK, string, error) {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
-	// for php, elixir we point them to github ref, so default the version to engine's tag
-	if slices.Contains([]SDK{SDKPHP, SDKElixir, SDKJava}, SDK(sdkNameParsed)) && sdkVersion == "" {
-		sdkVersion = engine.Tag
-	}
-
 	sdkSuffix := ""
 	if sdkVersion != "" {
 		sdkSuffix = "@" + sdkVersion
@@ -158,6 +152,7 @@ func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.
 	if err != nil {
 		return nil, err
 	}
+	_ = sdkSuffix
 
 	switch sdkNameParsed {
 	case SDKGo:
@@ -167,11 +162,11 @@ func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.
 	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKJava:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "sdk/java"}, nil)
 	case SDKPHP:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "sdk/php"}, nil)
 	case SDKElixir:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "sdk/elixir"}, nil)
 	}
 
 	return nil, getInvalidBuiltinSDKError(sdk.Source)
@@ -444,6 +439,7 @@ const (
 	goSDKUserModContextDirPath = "/src"
 	goSDKRuntimePath           = "/runtime"
 	goSDKIntrospectionJSONPath = "/schema.json"
+	goSDKHttpProxyPath         = "/http-cache-proxy"
 )
 
 /*
@@ -611,22 +607,251 @@ func (sdk *goSDK) Runtime(
 ) (_ *core.Container, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	codegenBaseCtr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
 	}
-	if err := sdk.dag.Select(ctx, ctr, &ctr,
+
+	//fmt.Println("TOTOOO!", source.Self.ModuleOriginalName)
+	// TODO(tiborvass): make this a param somewhere
+	httpProxyCache := "http-proxy-cache"
+	if source.Self.ModuleOriginalName != "alpine" {
+		httpProxyCache = ""
+	}
+	httpProxyPort := 8080
+	httpProxyAddr := fmt.Sprintf(":%d", httpProxyPort)
+	httpProxyCachePath := "/run/cache/http-proxy"
+
+	var (
+		runtimeBin dagql.Instance[*core.File]
+		httpProxyBin dagql.Instance[*core.File]
+		httpProxySvc dagql.Instance[*core.Service]
+		httpProxyEp dagql.String
+	)
+
+if httpProxyCache != "" {
+	var debug dagql.String
+	if err := sdk.dag.Select(ctx, codegenBaseCtr, &debug,
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
 				{
 					Name: "args",
 					Value: dagql.ArrayInput[dagql.String]{
-						"go", "build",
-						"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
-						"-o", goSDKRuntimePath,
-						".",
+						"find", ".",
 					},
+				},
+				{
+					Name: "redirectStdout",
+					Value: dagql.String("/tmp/out"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{
+					Name: "path",
+					Value: dagql.String("/tmp/out"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "contents",
+			Args: []dagql.NamedInput{
+				{
+					Name: "path",
+					Value: dagql.String("/tmp/out"),
+				},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("failed to debug: %w", err)
+	}
+
+	fmt.Println("YOLOOO!", debug)
+}
+
+
+	goBinSelectors := func(srcPath, destPath string) []dagql.Selector {
+		return []dagql.Selector{
+			{
+				Field: "withExec",
+				Args: []dagql.NamedInput{
+					{
+						Name: "args",
+						Value: dagql.ArrayInput[dagql.String]{
+							"go", "build",
+							"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
+							"-o", dagql.String(destPath),
+							dagql.String(srcPath),
+						},
+					},
+				},
+			},
+			{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{
+						Name: "path",
+						Value: dagql.String(destPath),
+					},
+				},
+			},
+		}
+	}
+
+	if err := sdk.dag.Select(ctx, codegenBaseCtr, &runtimeBin, goBinSelectors(".", goSDKRuntimePath)...); err != nil {
+		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
+	}
+
+	baseCtr, err := sdk.base(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	args := dagql.ArrayInput[dagql.String]{goSDKRuntimePath}
+
+	if httpProxyCache != "" {
+		args = dagql.ArrayInput[dagql.String]{
+			"sh", "-c", `env | sed -E 's/.*/YOLOOO \0/' && ` + goSDKRuntimePath,
+		}
+		var cache dagql.Instance[*core.CacheVolume]
+		if err := sdk.dag.Select(ctx, sdk.dag.Root(), &cache, dagql.Selector{
+			Field: "cacheVolume",
+			Args: []dagql.NamedInput{
+				{
+					Name: "key",
+					Value: dagql.String(httpProxyCache),
+				},
+				{
+					Name: "namespace",
+					Value: dagql.String("internal"),
+				},
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create http proxy cache volume named %q: %w", httpProxyCache, err)
+		}
+		/*
+		selectors := []dagql.Selector{
+			{
+				Field: "withMountedDirectory",
+				Args: []dagql.NamedInput{
+					{
+						Name: "path",
+						Value: dagql.String("/src"),
+					},
+					{
+						Name: "source",
+						Value: dagql.NewID[*core.Directory](source.Self.ContextDirectory.ID()),
+					},
+				},
+			},
+			{
+				Field: "withWorkdir",
+				Args: []dagql.NamedInput{
+					{
+						Name: "path",
+						Value: dagql.String("/src"),
+					},
+				},
+			},
+		}
+		selectors = append(selectors, goBinSelectors("./cmd/http-cache-proxy", goSDKHttpProxyPath)...)
+		if err := sdk.dag.Select(ctx, codegenBaseCtr, &httpProxyBin, selectors...); err != nil {
+		*/
+		if err := sdk.dag.Select(ctx, codegenBaseCtr, &httpProxyBin, goBinSelectors("./cmd/http-cache-proxy", goSDKHttpProxyPath)...); err != nil {
+			return nil, fmt.Errorf("failed to build go http proxy binary: %w", err)
+		}
+		if err := sdk.dag.Select(ctx, baseCtr, &httpProxySvc,
+			dagql.Selector{
+				Field: "withExposedPort",
+				Args: []dagql.NamedInput{
+					{
+						Name: "port",
+						Value: dagql.Int(httpProxyPort),
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "withMountedCache",
+				Args: []dagql.NamedInput{
+					{
+						Name: "path",
+						Value: dagql.String(httpProxyCachePath),
+					},
+					{
+						Name: "cache",
+						Value: dagql.NewID[*core.CacheVolume](cache.ID()),
+					},
+					{
+						Name:  "sharing",
+						Value: core.CacheSharingModeShared,
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "withMountedFile",
+				Args: []dagql.NamedInput{
+					{
+						Name: "path",
+						Value: dagql.String(goSDKHttpProxyPath),
+					},
+					{
+						Name: "source",
+						Value: dagql.NewID[*core.File](httpProxyBin.ID()),
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "asService",
+				Args: []dagql.NamedInput{
+					{
+						Name: "args",
+						Value: dagql.ArrayInput[dagql.String]{
+							dagql.String(goSDKHttpProxyPath),
+							dagql.String(httpProxyAddr),
+							dagql.String(httpProxyCachePath+"/cache.gob"),
+						},
+					},
+				},
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to create http proxy service: %w", err)
+		}
+
+		if err := sdk.dag.Select(ctx, httpProxySvc, &httpProxyEp,
+			dagql.Selector{
+				Field: "endpoint",
+				Args: []dagql.NamedInput{
+					{
+						Name: "port",
+						// TODO(tiborvass): shouldn't this be unnecessary to specify ?
+						Value: dagql.Opt(dagql.Int(httpProxyPort)),
+					},
+					{
+						Name: "scheme",
+						Value: dagql.String("http"),
+					},
+				},
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to retrieve http proxy endpoint: %w", err)
+		}
+		fmt.Println("YOLOOOO", httpProxyEp)
+	}
+
+	selectors := []dagql.Selector{
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name: "path",
+					Value: dagql.String(goSDKRuntimePath),
+				},
+				{
+					Name: "source",
+					Value: dagql.NewID[*core.File](runtimeBin.ID()),
 				},
 			},
 		},
@@ -635,9 +860,7 @@ func (sdk *goSDK) Runtime(
 			Args: []dagql.NamedInput{
 				{
 					Name: "args",
-					Value: dagql.ArrayInput[dagql.String]{
-						goSDKRuntimePath,
-					},
+					Value: args,
 				},
 			},
 		},
@@ -670,8 +893,40 @@ func (sdk *goSDK) Runtime(
 				},
 			},
 		},
-	); err != nil {
-		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
+	}
+	if httpProxyCache != "" {
+		selectors = append(selectors,
+			dagql.Selector{
+				Field: "withServiceBinding",
+				Args: []dagql.NamedInput{
+					{
+						Name: "alias",
+						Value: dagql.String("http-proxy"),
+					},
+					{
+						Name: "service",
+						Value: dagql.NewID[*core.Service](httpProxySvc.ID()),
+					},
+				},
+			},
+			dagql.Selector{
+				Field: "withEnvVariable",
+				Args: []dagql.NamedInput{
+					{
+						Name: "name",
+						Value: dagql.String("HTTP_PROXY"),
+					},
+					{
+						Name: "value",
+						Value: httpProxyEp,
+					},
+				},
+			},
+		)
+	}
+	var ctr dagql.Instance[*core.Container]
+	if err := sdk.dag.Select(ctx, baseCtr, &ctr, selectors...); err != nil {
+		return nil, fmt.Errorf("failed to build container with go runtime binary: %w", err)
 	}
 	return ctr.Self, nil
 }

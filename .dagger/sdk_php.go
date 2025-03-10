@@ -1,3 +1,5 @@
+//go:build sdk_php
+
 package main
 
 import (

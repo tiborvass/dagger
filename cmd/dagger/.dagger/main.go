@@ -2,8 +2,32 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
+
 	"dagger/dagger/internal/dagger"
 )
+
+func pseudoversionTimestamp(t time.Time) string {
+	// go time formatting is bizarre - this translates to "yymmddhhmmss"
+	return t.Format("060102150405")
+}
+
+func getVersionTag(ctx context.Context, source *dagger.Directory) (string, string, error) {
+	next := "v0.16.3"
+	digest, err := source.Digest(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if _, newDigest, ok := strings.Cut(digest, ":"); ok {
+		digest = newDigest
+	}
+	// NOTE: the timestamp is empty here to prevent unnecessary rebuilds
+	version := fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12])
+	tag := "1ab60f070617b193bd14dcb6c247a31391ccbdb9"
+	return version, tag, nil
+}
 
 func New(
 	ctx context.Context,
@@ -21,11 +45,7 @@ func New(
 ) (*DaggerCli, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		return nil, err
-	}
-	imageTag, err := dag.Version().ImageTag(ctx)
+	version, imageTag, err := getVersionTag(ctx, source)
 	if err != nil {
 		return nil, err
 	}

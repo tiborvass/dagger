@@ -4,6 +4,7 @@ go 1.23.1
 
 require (
 	chainguard.dev/apko v0.19.2
+	git.sr.ht/~mariusor/cache v0.0.0-20250122165545-14c90d7a9de8
 	github.com/99designs/gqlgen v0.17.66
 	github.com/Khan/genqlient v0.8.0
 	github.com/vektah/gqlparser/v2 v2.5.23

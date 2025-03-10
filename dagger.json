@@ -31,10 +31,6 @@
       "source": "sdk/dotnet/dev"
     },
     {
-      "name": "elixir-sdk-dev",
-      "source": "sdk/elixir/dev"
-    },
-    {
       "name": "go",
       "source": "modules/go"
     },
@@ -52,10 +48,6 @@
       "pin": "e4ee5778b10345d09a65a9655022d8ec40fc489f"
     },
     {
-      "name": "php-sdk-dev",
-      "source": "sdk/php/dev"
-    },
-    {
       "name": "ps-analyzer",
       "source": "modules/ps-analyzer"
     },
@@ -66,10 +58,6 @@
     {
       "name": "shellcheck",
       "source": "modules/shellcheck"
-    },
-    {
-      "name": "version",
-      "source": "version"
     },
     {
       "name": "wolfi",

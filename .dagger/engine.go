@@ -131,17 +131,16 @@ func (e *DaggerEngine) Service(
 ) (*dagger.Service, error) {
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
-		version, err := dag.Version().Version(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if version != "" {
-			cacheVolumeName = "dagger-dev-engine-state-" + version
-		} else {
-			cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
-		}
-		if name != "" {
-			cacheVolumeName += "-" + name
+		version, _ , err := getVersionTag(ctx, e.Dagger.Src)
+		if err == nil {
+			if version != "" {
+				cacheVolumeName = "dagger-dev-engine-state-" + version
+			} else {
+				cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
+			}
+			if name != "" {
+				cacheVolumeName += "-" + name
+			}
 		}
 	}
 

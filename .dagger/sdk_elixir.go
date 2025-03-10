@@ -1,3 +1,5 @@
+//go:build sdk_elixir
+
 package main
 
 import (
