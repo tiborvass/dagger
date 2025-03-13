@@ -533,19 +533,109 @@ func (llm *Llm) MCP(ctx context.Context, dag *dagql.Server) error {
 
 	// Create MCP server with tool
 	s := mcpserver.NewMCPServer("Dagger", "0.0.1")
-	s.AddTool(
-		mcp.NewTool("toto",
-			mcp.WithDescription("A tool to greet someone."),
-			mcp.WithString("name", mcp.Required(), mcp.Description("Name of the person to greet")),
-		),
-		func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			name, ok := request.Params.Arguments["name"].(string)
+
+	session, err := llm.BBI(dag)
+	if err != nil {
+		return err
+	}
+	for _, tool := range session.Tools() {
+		toolOpts := []mcp.ToolOption{
+			mcp.WithDescription(tool.Description),
+		}
+		var required []string
+		if v, ok := tool.Schema["required"]; ok {
+			required, ok = v.([]string)
 			if !ok {
-				return mcp.NewToolResultError("name must be a string"), nil
+				return fmt.Errorf("Expecting type []string for \"required\" for tool %q", tool.Name)
 			}
-			return mcp.NewToolResultText(fmt.Sprintf("Hello %s!", name)), nil
-		},
-	)
+		}
+		props, ok := tool.Schema["properties"]
+		if !ok {
+			return fmt.Errorf("Schema of tool %q is missing \"properties\": %+v", tool.Name, tool.Schema)
+		}
+		for argName, v := range props.(map[string]interface{}) {
+			var propOpts []mcp.PropertyOption
+			argSchema := v.(map[string]interface{})
+			if desc, ok := argSchema["description"]; ok {
+				s, ok := desc.(string)
+				if !ok {
+					return fmt.Errorf("Description of arg %q of tool %q is expected to be of type string, but is %T", argName, tool.Name, desc)
+				}
+				propOpts = append(propOpts, mcp.Description(s))
+			}
+			var typ string
+			if v, ok := argSchema["type"]; !ok {
+				return fmt.Errorf("Schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
+			} else {
+				typ, ok = v.(string)
+				if !ok {
+					return fmt.Errorf("Schema of arg %q of tool %q should have a \"type\" entry of type string, got %T", argName, tool.Name, v)
+				}
+			}
+
+			if v, ok := argSchema["default"]; ok {
+				// TODO: unclear why default uses DefaultValue.Raw string. What about other types?
+				if typ != "string" {
+					return fmt.Errorf("arg %q of tool %q is of type %q but has a default of type \"string\"", argName, tool.Name, typ)
+				}
+				defaultVal, ok := v.(string)
+				if !ok {
+					return fmt.Errorf("Only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", v)
+				}
+				propOpts = append(propOpts, mcp.DefaultString(defaultVal))
+			}
+			for _, r := range required {
+				if r == argName {
+					propOpts = append(propOpts, mcp.Required())
+					break
+				}
+			}
+
+			var mcpArg func(name string, propOpts ...mcp.PropertyOption) mcp.ToolOption
+			switch typ {
+			case "array":
+				if _, ok := argSchema["items"]; !ok {
+					return fmt.Errorf("Schema of array arg %q of tool %q should have an \"items\" entry", argName, tool.Name)
+				}
+				// TODO: need some recursion: array of array ...
+				return fmt.Errorf("[MCP] array type not implemented")
+			case "boolean":
+				mcpArg = mcp.WithBoolean
+			case "integer":
+				mcpArg = mcp.WithNumber
+			case "number":
+				mcpArg = mcp.WithNumber
+			case "string":
+				// TODO: should ID and custom type, use mcp.WithObject ?
+				mcpArg = mcp.WithString
+			}
+			toolOpts = append(toolOpts, mcpArg(argName, propOpts...))
+		}
+
+		s.AddTool(
+			mcp.NewTool(tool.Name, toolOpts...),
+			func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				if request.Method != "tools/call" {
+					return nil, fmt.Errorf("[dagger] expected MCP request method \"tools/call\" but received %q", request.Method)
+				}
+				result, err := tool.Call(ctx, request.Params.Arguments)
+				// TODO: differentiate user module's error from dagger error, for now we assume it's all user error
+				// 	If we could identify a Dagger error, we should simply return nil, err
+				if err != nil {
+					return mcp.NewToolResultError(err.Error()), nil
+				}
+				text, ok := result.(string)
+				if !ok {
+					b, err := json.Marshal(result)
+					if err != nil {
+						return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
+					}
+					text = string(b)
+				}
+				return mcp.NewToolResultText(text), nil
+			},
+		)
+	}
 
 	// Get buildkit client
 	bk, err := llm.Query.Buildkit(ctx)
