@@ -98,6 +98,7 @@ func init() {
 		newGenCmd(),
 		shellCmd,
 		llmCmd,
+		mcpCmd,
 		clientCmd,
 	)
 
