@@ -538,102 +538,133 @@ func (llm *Llm) MCP(ctx context.Context, dag *dagql.Server) error {
 	if err != nil {
 		return err
 	}
-	for _, tool := range session.Tools() {
+
+	bklog.G(ctx).Debugf("✅ |%+v|\n", session.Tools())
+
+	genToolOpts := func(tool bbi.Tool) ([]mcp.ToolOption, error) {
 		toolOpts := []mcp.ToolOption{
 			mcp.WithDescription(tool.Description),
 		}
-		var required []string
-		if v, ok := tool.Schema["required"]; ok {
-			required, ok = v.([]string)
+		if err := (func(tool bbi.Tool) error {
+			var required []string
+			if v, ok := tool.Schema["required"]; ok {
+				required, ok = v.([]string)
+				if !ok {
+					return fmt.Errorf("Expecting type []string for \"required\" for tool %q", tool.Name)
+				}
+			}
+			props, ok := tool.Schema["properties"]
 			if !ok {
-				return fmt.Errorf("Expecting type []string for \"required\" for tool %q", tool.Name)
+				return fmt.Errorf("Schema of tool %q is missing \"properties\": %+v", tool.Name, tool.Schema)
 			}
-		}
-		props, ok := tool.Schema["properties"]
-		if !ok {
-			return fmt.Errorf("Schema of tool %q is missing \"properties\": %+v", tool.Name, tool.Schema)
-		}
-		for argName, v := range props.(map[string]interface{}) {
-			var propOpts []mcp.PropertyOption
-			argSchema := v.(map[string]interface{})
-			if desc, ok := argSchema["description"]; ok {
-				s, ok := desc.(string)
-				if !ok {
-					return fmt.Errorf("Description of arg %q of tool %q is expected to be of type string, but is %T", argName, tool.Name, desc)
+			for argName, v := range props.(map[string]interface{}) {
+				var propOpts []mcp.PropertyOption
+				argSchema := v.(map[string]interface{})
+				if desc, ok := argSchema["description"]; ok {
+					s, ok := desc.(string)
+					if !ok {
+						return fmt.Errorf("Description of arg %q of tool %q is expected to be of type string, but is %T", argName, tool.Name, desc)
+					}
+					propOpts = append(propOpts, mcp.Description(s))
 				}
-				propOpts = append(propOpts, mcp.Description(s))
+				var typ string
+				if v, ok := argSchema["type"]; !ok {
+					return fmt.Errorf("Schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
+				} else {
+					typ, ok = v.(string)
+					if !ok {
+						return fmt.Errorf("Schema of arg %q of tool %q should have a \"type\" entry of type string, got %T", argName, tool.Name, v)
+					}
+				}
+
+				if v, ok := argSchema["default"]; ok {
+					// TODO: unclear why default uses DefaultValue.Raw string. What about other types?
+					if typ != "string" {
+						return fmt.Errorf("arg %q of tool %q is of type %q but has a default of type \"string\"", argName, tool.Name, typ)
+					}
+					defaultVal, ok := v.(string)
+					if !ok {
+						return fmt.Errorf("Only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", v)
+					}
+					propOpts = append(propOpts, mcp.DefaultString(defaultVal))
+				}
+				for _, r := range required {
+					if r == argName {
+						propOpts = append(propOpts, mcp.Required())
+						break
+					}
+				}
+
+				var mcpArg func(name string, propOpts ...mcp.PropertyOption) mcp.ToolOption
+				switch typ {
+				case "array":
+					if _, ok := argSchema["items"]; !ok {
+						return fmt.Errorf("Schema of array arg %q of tool %q should have an \"items\" entry", argName, tool.Name)
+					}
+					// TODO: need some recursion: array of array ...
+					return fmt.Errorf("[MCP] array type not implemented")
+				case "boolean":
+					mcpArg = mcp.WithBoolean
+				case "integer":
+					mcpArg = mcp.WithNumber
+				case "number":
+					mcpArg = mcp.WithNumber
+				case "string":
+					// TODO: should ID and custom type, use mcp.WithObject ?
+					mcpArg = mcp.WithString
+				}
+				toolOpts = append(toolOpts, mcpArg(argName, propOpts...))
 			}
-			var typ string
-			if v, ok := argSchema["type"]; !ok {
-				return fmt.Errorf("Schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
-			} else {
-				typ, ok = v.(string)
-				if !ok {
-					return fmt.Errorf("Schema of arg %q of tool %q should have a \"type\" entry of type string, got %T", argName, tool.Name, v)
-				}
+			return nil
+		})(tool); err != nil {
+			return nil, err
+		}
+		return toolOpts, nil
+	}
+
+	for _, tool := range session.Tools() {
+		toolOpts, err := genToolOpts(tool)
+		if err != nil {
+			return err
+		}
+
+		// inception :smirk:
+		// In order to have compatibility between LLM and MCP, we want -> on any given MCP tooling response, to also signify that
+		var toolHandler func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error)
+		toolHandler = func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if request.Method != "tools/call" {
+				return nil, fmt.Errorf("[dagger] expected MCP request method \"tools/call\" but received %q", request.Method)
 			}
 
-			if v, ok := argSchema["default"]; ok {
-				// TODO: unclear why default uses DefaultValue.Raw string. What about other types?
-				if typ != "string" {
-					return fmt.Errorf("arg %q of tool %q is of type %q but has a default of type \"string\"", argName, tool.Name, typ)
-				}
-				defaultVal, ok := v.(string)
-				if !ok {
-					return fmt.Errorf("Only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", v)
-				}
-				propOpts = append(propOpts, mcp.DefaultString(defaultVal))
+			result, err := tool.Call(ctx, request.Params.Arguments)
+			// TODO: differentiate user module's error from dagger error, for now we assume it's all user error
+			// 	If we could identify a Dagger error, we should simply return nil, err
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
-			for _, r := range required {
-				if r == argName {
-					propOpts = append(propOpts, mcp.Required())
-					break
+			text, ok := result.(string)
+			if !ok {
+				b, err := json.Marshal(result)
+				if err != nil {
+					return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
 				}
+				text = string(b)
 			}
 
-			var mcpArg func(name string, propOpts ...mcp.PropertyOption) mcp.ToolOption
-			switch typ {
-			case "array":
-				if _, ok := argSchema["items"]; !ok {
-					return fmt.Errorf("Schema of array arg %q of tool %q should have an \"items\" entry", argName, tool.Name)
+			for _, tool := range session.Tools() {
+				toolOpts, err := genToolOpts(tool)
+				if err != nil {
+					return nil, err
 				}
-				// TODO: need some recursion: array of array ...
-				return fmt.Errorf("[MCP] array type not implemented")
-			case "boolean":
-				mcpArg = mcp.WithBoolean
-			case "integer":
-				mcpArg = mcp.WithNumber
-			case "number":
-				mcpArg = mcp.WithNumber
-			case "string":
-				// TODO: should ID and custom type, use mcp.WithObject ?
-				mcpArg = mcp.WithString
+				s.AddTool(mcp.NewTool(tool.Name, toolOpts...), toolHandler)
 			}
-			toolOpts = append(toolOpts, mcpArg(argName, propOpts...))
+
+			return mcp.NewToolResultText(text), nil
 		}
 
 		s.AddTool(
 			mcp.NewTool(tool.Name, toolOpts...),
-			func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				if request.Method != "tools/call" {
-					return nil, fmt.Errorf("[dagger] expected MCP request method \"tools/call\" but received %q", request.Method)
-				}
-				result, err := tool.Call(ctx, request.Params.Arguments)
-				// TODO: differentiate user module's error from dagger error, for now we assume it's all user error
-				// 	If we could identify a Dagger error, we should simply return nil, err
-				if err != nil {
-					return mcp.NewToolResultError(err.Error()), nil
-				}
-				text, ok := result.(string)
-				if !ok {
-					b, err := json.Marshal(result)
-					if err != nil {
-						return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
-					}
-					text = string(b)
-				}
-				return mcp.NewToolResultText(text), nil
-			},
+			toolHandler,
 		)
 	}
 
@@ -833,6 +864,9 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	bklog.G(ctx).Debugf("✅✅ |%+v|\n", session.Tools())
+
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
 			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
@@ -840,6 +874,7 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 		llm.apiCalls++
 
 		tools := session.Tools()
+		bklog.G(ctx).Debugf("✅✅✅ |%+v|\n", session.Tools())
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.history, tools)
 		if err != nil {
 			return nil, err
@@ -905,6 +940,7 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 
 							return errResponse, true
 						}
+
 						stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 						defer stdio.Close()
 						switch v := result.(type) {
