@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
+	// "math"
 	"net/http"
 	"path/filepath"
 	"runtime"
@@ -16,9 +16,10 @@ import (
 
 	goapk "chainguard.dev/apko/pkg/apk/apk"
 	"github.com/dagger/dagger/dev/alpine/internal/dagger"
+	"github.com/dagger/dagger/engine/distconsts"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
-	"git.sr.ht/~mariusor/cache"
+	// "git.sr.ht/~mariusor/cache"
 )
 
 type Distro string
@@ -76,7 +77,6 @@ func New(
 		Branch:   branch,
 		Arch:     arch,
 		Packages: packages,
-		UseCache: useCache,
 
 		GoArch: goArch,
 	}, nil
@@ -92,8 +92,6 @@ type Alpine struct {
 	Branch string
 	// The APK packages to install
 	Packages []string
-	// Whether to use a caching HTTP Client
-	UseCache bool
 
 	// the GOARCH equivalent of Arch
 	// +private
@@ -101,6 +99,8 @@ type Alpine struct {
 }
 
 func (m *Alpine) httpClient() *http.Client {
+	return http.DefaultClient
+	/*
 	httpClient := http.DefaultClient
 	if !m.UseCache {
 		return httpClient
@@ -108,6 +108,7 @@ func (m *Alpine) httpClient() *http.Client {
 	untilEndOfTime := time.Until(time.Unix(math.MaxInt64, 0))
 	httpClient.Transport = cache.ForDuration(untilEndOfTime, httpClient.Transport, cache.FS("/run/cache/dagger-dev-http"))
 	return httpClient
+	*/
 }
 
 // Build an Alpine Linux container
@@ -188,6 +189,10 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		"/bin",
 	}, ":"))
 
+	fmt.Printf("TOTOTO: %#v\n", ctr)
+	id, err := ctr.ID(ctx)
+	fmt.Println("TOTOTO", id, err)
+
 	return ctr, nil
 }
 
@@ -206,7 +211,7 @@ func (m *Alpine) withPkgs(
 		fmt.Printf("package conflicts: %v\n", conflicts)
 	}
 
-	setupBase := dag.Container().From("busybox:latest")
+	setupBase := dag.Container().From(distconsts.BusyboxImage)
 
 	type apkPkg struct {
 		name        string

@@ -201,7 +201,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			`})
 	case "ubuntu":
 		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
-			From("ubuntu:"+consts.UbuntuVersion).
+			From(consts.UbuntuImage).
 			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 			//WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
 			WithExec([]string{"apt-get", "update"}).
