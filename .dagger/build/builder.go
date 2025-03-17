@@ -187,7 +187,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 				},
 				Arch: build.platformSpec.Architecture,
-				UseCache: true,
+				//UseCache: true,
 			}).
 			Container().
 			WithExec([]string{"sh", "-c", `
@@ -405,7 +405,7 @@ func (build *Builder) cniPlugins() []*dagger.File {
 			Alpine(dagger.AlpineOpts{
 				Branch:   consts.AlpineVersion,
 				Packages: []string{"build-base", "go", "git"},
-				UseCache: true,
+				//UseCache: true,
 			}).
 			Container()
 	case "ubuntu":
@@ -476,7 +476,7 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		Alpine(dagger.AlpineOpts{
 			Branch:   consts.AlpineVersion,
 			Packages: []string{"file"},
-			UseCache: true,
+			//UseCache: true,
 		}).
 		Container().
 		WithMountedFile(mntPath, bin).
