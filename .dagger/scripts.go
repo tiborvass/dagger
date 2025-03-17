@@ -48,10 +48,13 @@ func (s Scripts) Test(ctx context.Context) error {
 			Permissions: 0755,
 		})
 
+	var lastRelease string
+	/*
 	lastRelease, err := dag.Version().LastReleaseVersion(ctx)
 	if err != nil {
 		return err
 	}
+	*/
 
 	eg := errgroup.Group{}
 
