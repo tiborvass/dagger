@@ -1,6 +1,8 @@
 module github.com/dagger/dagger
 
-go 1.23.6
+go 1.23.0
+
+toolchain go1.23.6
 
 require (
 	dagger.io/dagger v0.16.2
@@ -340,7 +342,6 @@ require (
 )
 
 replace (
-	github.com/mark3labs/mcp-go => ./mcp-go
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0
 	go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.8.0
