@@ -7,6 +7,7 @@ import (
 	io "io"
 	"os"
 
+	"github.com/dagger/dagger/engine/session/ctxio"
 	"github.com/moby/buildkit/util/grpcerrors"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -35,77 +36,72 @@ func (p PipeAttachable) Register(srv *grpc.Server) {
 }
 
 func (p PipeAttachable) IO(srv Pipe_IOServer) error {
-	ctx, cancel := context.WithCancelCause(srv.Context())
-	defer cancel(errors.New("terminal session finished"))
+	rw := ctxio.NewReadWriter(srv.Context(), &PipeIO{GRPC: srv})
 
-	go p.forwardStdin(ctx, srv, p.stdin)
-
-	for {
-		req, err := srv.Recv()
+	go func() {
+		_, err := io.Copy(rw, p.stdin)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
-				// canceled
-				return nil
-			}
-
-			if errors.Is(err, io.EOF) {
-				// stopped
-				return nil
-			}
-
-			if grpcerrors.Code(err) == codes.Unavailable {
-				// client disconnected (i.e. quitting Dagger out)
-				return nil
-			}
-			return fmt.Errorf("error reading pipe: %w", err)
+			fmt.Fprintf(os.Stderr, "pipeattachable stdin copy: %v\n", err)
 		}
-
-		// receive request from engine, forwarding to stdout on client
-		data := req.GetData()
-		_, err = p.stdout.Write(data)
-		if err != nil {
-			return fmt.Errorf("pipe write stdout: %w", err)
-		}
+	}()
+	if _, err := io.Copy(p.stdout, rw); err != nil {
+		fmt.Fprintf(os.Stderr, "pipeattachable stdout copy: %v\n", err)
 	}
+	return nil
 }
 
-func (p PipeAttachable) forwardStdin(ctx context.Context, srv Pipe_IOServer, stdin io.Reader) {
-	if p.stdin == nil {
-		return
+// PipeIO transforms a Pipe_IOServer or a Pipe_IOClient into an io.ReadWriter
+type PipeIO struct {
+	GRPC interface {
+		Send(*Data) error
+		Recv() (*Data, error)
 	}
+	rem []byte
+}
 
-	// In order to stop reading from stdin when the context is cancelled,
-	// we proxy the reads through a Pipe which we can close without closing
-	// the underlying stdin.
-	pipeR, pipeW := io.Pipe()
-	close := func() {
-		pipeR.Close()
-		pipeW.Close()
+func (w *PipeIO) Write(p []byte) (n int, err error) {
+	err = w.GRPC.Send(&Data{Data: p})
+	if err != nil && !errors.Is(err, io.EOF) {
+		return 0, fmt.Errorf("error writing dagger pipe: %w", err)
 	}
-	defer close()
-	go io.Copy(pipeW, stdin)
-	go func() {
-		<-ctx.Done()
-		close()
-	}()
+	return len(p), nil
+}
 
-	b := make([]byte, 512)
-	for {
-		n, err := pipeR.Read(b)
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
-				return
-			}
-			fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)
-			return
+func (r *PipeIO) Read(p []byte) (n int, err error) {
+	// read from the remainder buffer first
+	n = copy(p, r.rem)
+	p = p[n:]
+	r.rem = r.rem[n:]
+	if len(p) == 0 || n != 0 {
+		return n, nil
+	}
+	req, err := r.GRPC.Recv()
+	if err != nil {
+		if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
+			// canceled
+			return 0, nil
 		}
-
-		err = srv.Send(&Data{
-			Data: b[:n],
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "forward stdin: %v\n", err)
-			return
+		if errors.Is(err, io.EOF) {
+			// stopped
+			return 0, nil
 		}
+		if grpcerrors.Code(err) == codes.Unavailable {
+			// client disconnected (i.e. quitting Dagger out)
+			return 0, nil
+		}
+		return 0, fmt.Errorf("error reading dagger pipe: %w", err)
 	}
+	r.rem = req.GetData()
+	n = copy(p, r.rem)
+	r.rem = r.rem[n:]
+	return n, nil
+}
+
+func (p *PipeIO) Close() error {
+	if c, ok := p.GRPC.(interface {
+		CloseSend() error
+	}); ok {
+		return c.CloseSend()
+	}
+	return nil
 }

@@ -687,11 +687,11 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("buildkit client error: %w", err)
 	}
 
-	pc, err := bk.OpenPipe(ctx)
+	rwc, err := bk.OpenPipe(ctx)
 	if err != nil {
 		return fmt.Errorf("open pipe error: %w", err)
 	}
-	defer pc.Close()
+	defer rwc.Close()
 	bklog.G(ctx).Debugf("🎃 Pipe opened")
 
 	// Create a context with cancel to coordinate goroutines
@@ -717,7 +717,7 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 			case <-ctxWithCancel.Done():
 				return
 			default:
-				n, err := pc.Stdin.Read(buf)
+				n, err := rwc.Read(buf)
 				if err != nil {
 					if !errors.Is(err, io.EOF) {
 						bklog.G(ctx).Warnf("pipe recv err: %v", err)
@@ -788,7 +788,7 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 
 	// Create a writer that logs responses
 	responseWriter := &responseWriterWithLogging{
-		writer: pc.Stdout,
+		writer: rwc,
 		ctx:    ctxWithCancel,
 	}
 
@@ -834,9 +834,6 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("timeout waiting for stdin input")
 	case err := <-errCh:
 		bklog.G(ctx).Errorf("🎃 Error in goroutine: %v", err)
-		return err
-	case err := <-pc.ErrCh:
-		bklog.G(ctx).Errorf("🎃 Error in pipe client: %v", err)
 		return err
 	}
 }
