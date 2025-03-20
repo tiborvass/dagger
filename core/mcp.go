@@ -24,112 +24,112 @@ func mcpDefault[T any](v T) mcp.PropertyOption {
 	}
 }
 
+func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
+	toolOpts := []mcp.ToolOption{
+		mcp.WithDescription(tool.Description),
+	}
+	var required []string
+	if v, ok := tool.Schema["required"]; ok {
+		required, ok = v.([]string)
+		if !ok {
+			return nil, fmt.Errorf("Expecting type []string for \"required\" for tool %q", tool.Name)
+		}
+	}
+	props, ok := tool.Schema["properties"]
+	if !ok {
+		return nil, fmt.Errorf("Schema of tool %q is missing \"properties\": %+v", tool.Name, tool.Schema)
+	}
+	for argName, v := range props.(map[string]any) {
+		var propOpts []mcp.PropertyOption
+		argSchema := v.(map[string]any)
+		if desc, ok := argSchema["description"]; ok {
+			s, ok := desc.(string)
+			if !ok {
+				return nil, fmt.Errorf("Description of arg %q of tool %q is expected to be of type string, but is %T", argName, tool.Name, desc)
+			}
+			propOpts = append(propOpts, mcp.Description(s))
+		}
+		var typ string
+		if v, ok := argSchema["type"]; !ok {
+			return nil, fmt.Errorf("Schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
+		} else {
+			typ, ok = v.(string)
+			if !ok {
+				return nil, fmt.Errorf("Schema of arg %q of tool %q should have a \"type\" entry of type string, got %T", argName, tool.Name, v)
+			}
+		}
+
+		var defaultVal *string
+		if v, ok := argSchema["default"]; ok {
+			defVal, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("Only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", argName, tool.Name, v)
+			}
+			defaultVal = &defVal
+		}
+		if slices.Contains(required, argName) {
+			propOpts = append(propOpts, mcp.Required())
+		}
+
+		var mcpArg func(string, ...mcp.PropertyOption) mcp.ToolOption
+		switch typ {
+		case "array":
+			items, ok := argSchema["items"]
+			if !ok {
+				return nil, fmt.Errorf("Schema of array arg %q of tool %q should have an \"items\" entry", argName, tool.Name)
+			}
+			// TODO: verify items has a valid schema: {"type": string} ? At least OpenAI requires it.
+			mcpArg = mcp.WithArray
+			propOpts = append(propOpts, mcp.Items(items))
+			if defaultVal != nil {
+				if *defaultVal != "[]" && *defaultVal != "" {
+					return nil, fmt.Errorf("Not implemented: default value of array arg %q of tool %q can only be an empty array, received: %s", argName, tool.Name, *defaultVal)
+				}
+				propOpts = append(propOpts, mcpDefault([]any{}))
+			}
+		case "boolean":
+			mcpArg = mcp.WithBoolean
+			if defaultVal != nil {
+				b, err := strconv.ParseBool(*defaultVal)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse default value of boolean arg %q of tool %q: %w", argName, tool.Name, err)
+				}
+				propOpts = append(propOpts, mcp.DefaultBool(b))
+			}
+		case "integer":
+			mcpArg = mcp.WithNumber
+			if defaultVal != nil {
+				i, err := strconv.ParseInt(*defaultVal, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse default value of integer arg %q of tool %q: %w", argName, tool.Name, err)
+				}
+				propOpts = append(propOpts, mcpDefault(int(i)))
+			}
+		case "number":
+			mcpArg = mcp.WithNumber
+			if defaultVal != nil {
+				f, err := strconv.ParseFloat(*defaultVal, 64)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse default value of number arg %q of tool %q: %w", argName, tool.Name, err)
+				}
+				propOpts = append(propOpts, mcp.DefaultNumber(f))
+			}
+		case "string":
+			// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
+			mcpArg = mcp.WithString
+			if defaultVal != nil {
+				propOpts = append(propOpts, mcp.DefaultString(*defaultVal))
+			}
+		default:
+			return nil, fmt.Errorf("arg %q of tool %q is of unsupported type %q", argName, tool.Name, typ)
+		}
+		toolOpts = append(toolOpts, mcpArg(argName, propOpts...))
+	}
+	return toolOpts, nil
+}
+
 func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 	s := mcpserver.NewMCPServer("Dagger", "0.0.1")
-
-	genMcpToolOpts := func(tool LLMTool) ([]mcp.ToolOption, error) {
-		toolOpts := []mcp.ToolOption{
-			mcp.WithDescription(tool.Description),
-		}
-		var required []string
-		if v, ok := tool.Schema["required"]; ok {
-			required, ok = v.([]string)
-			if !ok {
-				return nil, fmt.Errorf("expecting type []string for \"required\" for tool %q", tool.Name)
-			}
-		}
-		props, ok := tool.Schema["properties"]
-		if !ok {
-			return nil, fmt.Errorf("schema of tool %q is missing \"properties\": %+v", tool.Name, tool.Schema)
-		}
-		for argName, v := range props.(map[string]any) {
-			var propOpts []mcp.PropertyOption
-			argSchema := v.(map[string]any)
-			if desc, ok := argSchema["description"]; ok {
-				s, ok := desc.(string)
-				if !ok {
-					return nil, fmt.Errorf("description of arg %q of tool %q is expected to be of type string, but is %T", argName, tool.Name, desc)
-				}
-				propOpts = append(propOpts, mcp.Description(s))
-			}
-			var typ string
-			if v, ok := argSchema["type"]; !ok {
-				return nil, fmt.Errorf("schema of arg %q of tool %q is missing \"type\": %+v", argName, tool.Name, argSchema)
-			} else {
-				typ, ok = v.(string)
-				if !ok {
-					return nil, fmt.Errorf("schema of arg %q of tool %q should have a \"type\" entry of type string, got %T", argName, tool.Name, v)
-				}
-			}
-
-			var defaultVal *string
-			if v, ok := argSchema["default"]; ok {
-				defVal, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", argName, tool.Name, v)
-				}
-				defaultVal = &defVal
-			}
-			if slices.Contains(required, argName) {
-				propOpts = append(propOpts, mcp.Required())
-			}
-
-			var mcpArg func(string, ...mcp.PropertyOption) mcp.ToolOption
-			switch typ {
-			case "array":
-				items, ok := argSchema["items"]
-				if !ok {
-					return nil, fmt.Errorf("schema of array arg %q of tool %q should have an \"items\" entry", argName, tool.Name)
-				}
-				// TODO: verify items has a valid schema: {"type": string} ? At least OpenAI requires it.
-				mcpArg = mcp.WithArray
-				propOpts = append(propOpts, mcp.Items(items))
-				if defaultVal != nil {
-					if *defaultVal != "[]" && *defaultVal != "" {
-						return nil, fmt.Errorf("not implemented: default value of array arg %q of tool %q can only be an empty array, received: %s", argName, tool.Name, *defaultVal)
-					}
-					propOpts = append(propOpts, mcpDefault([]any{}))
-				}
-			case "boolean":
-				mcpArg = mcp.WithBoolean
-				if defaultVal != nil {
-					b, err := strconv.ParseBool(*defaultVal)
-					if err != nil {
-						return nil, fmt.Errorf("failed to parse default value of boolean arg %q of tool %q: %w", argName, tool.Name, err)
-					}
-					propOpts = append(propOpts, mcp.DefaultBool(b))
-				}
-			case "integer":
-				mcpArg = mcp.WithNumber
-				if defaultVal != nil {
-					i, err := strconv.ParseInt(*defaultVal, 10, 64)
-					if err != nil {
-						return nil, fmt.Errorf("failed to parse default value of integer arg %q of tool %q: %w", argName, tool.Name, err)
-					}
-					propOpts = append(propOpts, mcpDefault(int(i)))
-				}
-			case "number":
-				mcpArg = mcp.WithNumber
-				if defaultVal != nil {
-					f, err := strconv.ParseFloat(*defaultVal, 64)
-					if err != nil {
-						return nil, fmt.Errorf("failed to parse default value of number arg %q of tool %q: %w", argName, tool.Name, err)
-					}
-					propOpts = append(propOpts, mcp.DefaultNumber(f))
-				}
-			case "string":
-				// TODO: should we do anything fancy if argSchema["format"] is present (e.g., ID or CustomType)?
-				mcpArg = mcp.WithString
-				if defaultVal != nil {
-					propOpts = append(propOpts, mcp.DefaultString(*defaultVal))
-				}
-			default:
-				return nil, fmt.Errorf("arg %q of tool %q is of unsupported type %q", argName, tool.Name, typ)
-			}
-			toolOpts = append(toolOpts, mcpArg(argName, propOpts...))
-		}
-		return toolOpts, nil
-	}
 
 	var genMcpToolHandler func(LLMTool) mcpserver.ToolHandlerFunc
 	genMcpToolHandler = func(tool LLMTool) mcpserver.ToolHandlerFunc {
