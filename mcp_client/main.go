@@ -147,9 +147,8 @@ func executeMCPToolCall(ctx context.Context, mcpClient client.MCPClient, tool To
 	if len(executeResponse.Content) != 1 {
 		panic("expected MCP response to have exactly one content")
 	}
-
 	result := executeResponse.Content[0].(mcp.TextContent).Text
-	return result, false
+	return result, executeResponse.IsError
 }
 
 // Helper function to truncate long strings for logging
@@ -243,15 +242,9 @@ func main() {
 
 	// Create MCP client
 	c, err := client.NewStdioMCPClient(
-		"/home/guillaume/dagger/bin/dagger",
-		[]string{
-			"_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev",
-			"OPENAI_API_KEY=" + openaiAPIKey,
-		},
-		"-s",
-		"mcp",
-		"-m",
-		"/home/guillaume/mcp/repro_llm/repro_llm_with/",
+		os.Args[1],
+		os.Environ(),
+		os.Args[2:]...,
 	)
 	if err != nil {
 		slog.Fatalf("Failed to create client: %v", err)
