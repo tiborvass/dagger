@@ -146,12 +146,16 @@ func (s *StdioServer) Listen(
 			errChan := make(chan error, 1)
 
 			go func() {
+				fmt.Fprintln(os.Stderr, "TOTOTO pre server readstring")
 				line, err := reader.ReadString('\n')
+				fmt.Fprintln(os.Stderr, "TOTOTO post server readstring", err)
 				if err != nil {
 					errChan <- err
 					return
 				}
+				fmt.Fprintln(os.Stderr, "TOTOTO pre send line", string(line))
 				readChan <- line
+				fmt.Fprintln(os.Stderr, "TOTOTO post send line", string(line))
 			}()
 
 			select {

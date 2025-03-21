@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -522,7 +523,9 @@ func (s *MCPServer) AddTools(tools ...ServerTool) {
 	if s.capabilities.tools == nil {
 		s.capabilities.tools = &toolCapabilities{}
 	}
+	fmt.Fprintln(os.Stderr, "TOTOTO prelock")
 	s.mu.Lock()
+	fmt.Fprintln(os.Stderr, "TOTOTO postlock")
 	for _, entry := range tools {
 		s.tools[entry.Tool.Name] = entry
 	}
@@ -531,7 +534,9 @@ func (s *MCPServer) AddTools(tools ...ServerTool) {
 
 	// Send notification if server is already initialized
 	if initialized {
+		fmt.Fprintln(os.Stderr, "TOTOTO prenotify")
 		s.sendNotificationToAllClients("notifications/tools/list_changed", nil)
+		fmt.Fprintln(os.Stderr, "TOTOTO postnotify")
 	}
 }
 
@@ -785,7 +790,9 @@ func (s *MCPServer) handleListTools(
 	id interface{},
 	request mcp.ListToolsRequest,
 ) mcp.JSONRPCMessage {
+	fmt.Fprintln(os.Stderr, "TOTOTO pre mu lock")
 	s.mu.RLock()
+	fmt.Fprintln(os.Stderr, "TOTOTO post mulock")
 	tools := make([]mcp.Tool, 0, len(s.tools))
 
 	// Get all tool names for consistent ordering

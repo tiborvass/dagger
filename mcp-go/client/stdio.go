@@ -111,7 +111,9 @@ func (c *StdioMCPClient) readResponses() {
 		case <-c.done:
 			return
 		default:
+			fmt.Fprintln(os.Stderr, "TOTOTO prereadstring")
 			line, err := c.stdout.ReadString('\n')
+			fmt.Fprintln(os.Stderr, "TOTOTO postreadstring")
 			if err != nil {
 				if err != io.EOF {
 					fmt.Printf("Error reading response: %v\n", err)
@@ -140,7 +142,9 @@ func (c *StdioMCPClient) readResponses() {
 				if err := json.Unmarshal([]byte(line), &notification); err != nil {
 					continue
 				}
+				fmt.Fprintln(os.Stderr, "TOTOTO pre notifylock")
 				c.notifyMu.RLock()
+				fmt.Fprintln(os.Stderr, "TOTOTO post notifylock")
 				for _, handler := range c.notifications {
 					handler(notification)
 				}
@@ -148,11 +152,14 @@ func (c *StdioMCPClient) readResponses() {
 				continue
 			}
 
+			fmt.Fprintln(os.Stderr, "TOTOTO pre mu lock")
 			c.mu.RLock()
+			fmt.Fprintln(os.Stderr, "TOTOTO post mu lock")
 			ch, ok := c.responses[*baseMessage.ID]
 			c.mu.RUnlock()
 
 			if ok {
+				fmt.Fprintln(os.Stderr, "TOTOTO pre send", baseMessage.Error != nil)
 				if baseMessage.Error != nil {
 					ch <- RPCResponse{
 						Error: &baseMessage.Error.Message,
@@ -162,7 +169,10 @@ func (c *StdioMCPClient) readResponses() {
 						Response: &baseMessage.Result,
 					}
 				}
+				fmt.Fprintln(os.Stderr, "TOTOTO post send", baseMessage.Error != nil)
+				fmt.Fprintln(os.Stderr, "TOTOTO pre mu2 lock")
 				c.mu.Lock()
+				fmt.Fprintln(os.Stderr, "TOTOTO post mu2 lock")
 				delete(c.responses, *baseMessage.ID)
 				c.mu.Unlock()
 			}
@@ -206,9 +216,11 @@ func (c *StdioMCPClient) sendRequest(
 	}
 	requestBytes = append(requestBytes, '\n')
 
+	fmt.Fprintln(os.Stderr, "mcp client sending request", string(requestBytes))
 	if _, err := c.stdin.Write(requestBytes); err != nil {
 		return nil, fmt.Errorf("failed to write request: %w", err)
 	}
+	fmt.Fprintln(os.Stderr, "mcp client sent request", string(requestBytes))
 
 	select {
 	case <-ctx.Done():
@@ -217,9 +229,11 @@ func (c *StdioMCPClient) sendRequest(
 		c.mu.Unlock()
 		return nil, ctx.Err()
 	case response := <-responseChan:
+		fmt.Fprintln(os.Stderr, "mcp client received response from send request, error:", response.Error)
 		if response.Error != nil {
 			return nil, errors.New(*response.Error)
 		}
+		fmt.Fprintln(os.Stderr, "mcp client received response from send request, response:", string(*response.Response))
 		return response.Response, nil
 	}
 }
