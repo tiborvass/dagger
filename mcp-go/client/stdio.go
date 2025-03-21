@@ -47,6 +47,7 @@ func NewStdioMCPClient(
 	mergedEnv = append(mergedEnv, env...)
 
 	cmd.Env = mergedEnv
+	cmd.Stderr = os.Stderr
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
