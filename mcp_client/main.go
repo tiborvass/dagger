@@ -29,34 +29,65 @@ func (llm *LLM) Sync(ctx context.Context, mcpClient client.MCPClient) (*LLM, err
 		return llm, nil
 	}
 
+	fmt.Fprintf(os.Stderr, "🔄 Starting sync loop with %d messages\n", len(llm.messages))
+
 	// Log the last message for context
 	if len(llm.messages) > 0 {
 		lastMsg := llm.messages[len(llm.messages)-1]
-		_ = lastMsg
+		fmt.Fprintf(os.Stderr, "📝 Last message: Role=%s, Content=%s\n",
+			lastMsg.Role, truncateString(fmt.Sprintf("%v", lastMsg.Content), 100))
 	}
 
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
+			fmt.Fprintf(os.Stderr, "⚠️ Reached API call limit: %d\n", llm.apiCalls)
 			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
 		}
 
+		fmt.Fprintf(os.Stderr, "📞 Making API call #%d\n", llm.apiCalls+1)
 		llm.apiCalls++
 
 		// Get the latest tools from MCP
+		fmt.Fprintf(os.Stderr, "🧰 Requesting tools list from MCP\n")
 		toolsRequest := mcp.ListToolsRequest{}
 		toolsResponse, err := mcpClient.ListTools(ctx, toolsRequest)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to list tools: %v\n", err)
 			return nil, fmt.Errorf("failed to list tools: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "🔧 Received %d tools from MCP\n", len(toolsResponse.Tools))
+		for i, tool := range toolsResponse.Tools {
+			fmt.Fprintf(os.Stderr, "  🛠️ Tool #%d: %s - %s\n", i+1, tool.Name, tool.Description)
+			fmt.Fprintf(os.Stderr, "     Schema Type: %s, Required: %v\n",
+				tool.InputSchema.Type, tool.InputSchema.Required)
+			fmt.Fprintf(os.Stderr, "     Properties: %+v\n", tool.InputSchema.Properties)
 		}
 
 		// Convert MCP tools to LLM tools
 		tools := convertMCPToolsToLLMTools(toolsResponse.Tools)
 
 		// Send query to LLM
+		fmt.Fprintf(os.Stderr, "🤖 Sending query to LLM with %d messages and %d tools\n",
+			len(llm.messages), len(tools))
+
+		// Log the tools being sent
+		for i, tool := range tools {
+			fmt.Fprintf(os.Stderr, "  🔨 Tool #%d for LLM: %s - %s\n",
+				i+1, tool.Name, tool.Description)
+			fmt.Fprintf(os.Stderr, "     Schema: %+v\n", tool.Schema)
+		}
+
+		fmt.Fprintf(os.Stderr, "⏳ Waiting for LLM response...\n")
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messages, tools)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to send query to LLM: %v\n", err)
 			return nil, err
 		}
+
+		fmt.Fprintf(os.Stderr, "📩 Received response from LLM with %d tool calls\n", len(res.ToolCalls))
+		fmt.Fprintf(os.Stderr, "  📊 Token usage: %+v\n", res.TokenUsage)
+		fmt.Fprintf(os.Stderr, "  💬 Content: %s\n", truncateString(fmt.Sprintf("%v", res.Content), 200))
 
 		// Add the model reply to the history
 		llm.messages = append(llm.messages, ModelMessage{
@@ -68,20 +99,35 @@ func (llm *LLM) Sync(ctx context.Context, mcpClient client.MCPClient) (*LLM, err
 
 		// If no tool calls, we're done
 		if len(res.ToolCalls) == 0 {
+			fmt.Fprintf(os.Stderr, "✅ No tool calls, exiting sync loop\n")
 			break
 		}
 
 		// Process tool calls
-		for _, toolCall := range res.ToolCalls {
+		for i, toolCall := range res.ToolCalls {
+			fmt.Fprintf(os.Stderr, "🔨 Processing tool call #%d: %s (ID: %s)\n",
+				i+1, toolCall.Function.Name, toolCall.ID)
+			fmt.Fprintf(os.Stderr, "  📄 Arguments: %s\n", toolCall.Function.Arguments)
+
 			toolFound := false
 			for _, tool := range tools {
 				if tool.Name == toolCall.Function.Name {
 					toolFound = true
+					fmt.Fprintf(os.Stderr, "  🚀 Executing tool: %s\n", tool.Name)
+					fmt.Fprintf(os.Stderr, "  ⏳ Waiting for tool execution...\n")
 
 					result, isError := executeMCPToolCall(ctx, mcpClient, tool, toolCall)
 
+					if isError {
+						fmt.Fprintf(os.Stderr, "  ⚠️ Tool execution resulted in error: %s\n", result)
+					} else {
+						fmt.Fprintf(os.Stderr, "  ✅ Tool execution successful, result: %s\n",
+							truncateString(result, 200))
+					}
+
 					// Add tool call result to history
 					llm.calls[toolCall.ID] = result
+					fmt.Fprintf(os.Stderr, "  📝 Adding tool result to message history (ID: %s)\n", toolCall.ID)
 					llm.messages = append(llm.messages, ModelMessage{
 						Role:        "user", // Anthropic only allows tool calls in user messages
 						Content:     result,
@@ -92,25 +138,35 @@ func (llm *LLM) Sync(ctx context.Context, mcpClient client.MCPClient) (*LLM, err
 			}
 
 			if !toolFound {
+				fmt.Fprintf(os.Stderr, "  ⚠️ Tool not found: %s\n", toolCall.Function.Name)
 			}
 		}
 
+		fmt.Fprintf(os.Stderr, "🔄 Continuing sync loop with %d messages\n", len(llm.messages))
 	}
 
 	llm.dirty = false
+	fmt.Fprintf(os.Stderr, "🏁 Sync completed successfully\n")
 	return llm, nil
 }
 
 // Convert MCP tools to LLM tools with detailed logging
 func convertMCPToolsToLLMTools(mcpTools []mcp.Tool) []Tool {
 	var tools []Tool
+	fmt.Fprintf(os.Stderr, "🔍 Converting %d MCP tools to LLM tools\n", len(mcpTools))
 
-	for _, mcpTool := range mcpTools {
+	for i, mcpTool := range mcpTools {
 		// Parse the input schema
 		var schema = map[string]interface{}{}
 		schema["type"] = mcpTool.InputSchema.Type
 		schema["properties"] = mcpTool.InputSchema.Properties
 		schema["required"] = mcpTool.InputSchema.Required
+
+		fmt.Fprintf(os.Stderr, "🔧 Tool #%d: %s\n", i+1, mcpTool.Name)
+		fmt.Fprintf(os.Stderr, "  📝 Description: %s\n", mcpTool.Description)
+		fmt.Fprintf(os.Stderr, "  📋 Schema type: %s\n", mcpTool.InputSchema.Type)
+		fmt.Fprintf(os.Stderr, "  🔑 Required fields: %v\n", mcpTool.InputSchema.Required)
+		fmt.Fprintf(os.Stderr, "  🏷️ Properties: %+v\n", mcpTool.InputSchema.Properties)
 
 		// Create a new tool
 		tools = append(tools, Tool{
@@ -120,11 +176,14 @@ func convertMCPToolsToLLMTools(mcpTools []mcp.Tool) []Tool {
 		})
 	}
 
+	fmt.Fprintf(os.Stderr, "✅ Converted %d tools successfully\n", len(tools))
 	return tools
 }
 
 // Execute an MCP tool call with detailed logging
 func executeMCPToolCall(ctx context.Context, mcpClient client.MCPClient, tool Tool, toolCall ToolCall) (string, bool) {
+	fmt.Fprintf(os.Stderr, "⚙️ Executing tool call: %s (ID: %s)\n", tool.Name, toolCall.ID)
+	fmt.Fprintf(os.Stderr, "  📄 Arguments: %s\n", toolCall.Function.Arguments)
 
 	// Create execute request
 	executeRequest := mcp.CallToolRequest{
@@ -136,16 +195,32 @@ func executeMCPToolCall(ctx context.Context, mcpClient client.MCPClient, tool To
 	executeRequest.Params.Arguments = toolCall.Function.Arguments
 
 	// Execute the tool
+	fmt.Fprintf(os.Stderr, "  📡 Sending tool call request to MCP\n")
+	fmt.Fprintf(os.Stderr, "  ⏳ Waiting for MCP response...\n")
 	executeResponse, err := mcpClient.CallTool(ctx, executeRequest)
 	if err != nil {
 		errResponse := err.Error()
+		fmt.Fprintf(os.Stderr, "  ❌ Tool call failed with error: %s\n", errResponse)
 		return errResponse, true
 	}
 
+	fmt.Fprintf(os.Stderr, "  📬 Received tool call response with %d content items\n", len(executeResponse.Content))
+
 	if len(executeResponse.Content) != 1 {
+		fmt.Fprintf(os.Stderr, "  ⚠️ Unexpected response format: expected 1 content item, got %d\n",
+			len(executeResponse.Content))
 		panic("expected MCP response to have exactly one content")
 	}
 	result := executeResponse.Content[0].(mcp.TextContent).Text
+	if executeResponse.IsError {
+		fmt.Fprintf(os.Stderr, "  ❌ Tool call completed with error\n")
+		fmt.Fprintf(os.Stderr, "  ⚠️ Error result (%d chars): %s\n",
+			len(result), truncateString(result, 200))
+	} else {
+		fmt.Fprintf(os.Stderr, "  ✅ Tool call completed successfully\n")
+		fmt.Fprintf(os.Stderr, "  📊 Success result (%d chars): %s\n",
+			len(result), truncateString(result, 200))
+	}
 	return result, executeResponse.IsError
 }
 
