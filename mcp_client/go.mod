@@ -23,6 +23,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.13 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

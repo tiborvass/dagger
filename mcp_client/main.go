@@ -1,14 +1,16 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"io"
 	slog "log"
 	"os"
+	"strings"
 	"time"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/chzyer/readline"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"go.opentelemetry.io/otel/attribute"
@@ -26,7 +28,6 @@ func (llm *LLM) Sync(ctx context.Context, mcpClient client.MCPClient) (*LLM, err
 		// until a prompt is given
 		return llm, nil
 	}
-
 
 	// Log the last message for context
 	if len(llm.messages) > 0 {
@@ -56,7 +57,6 @@ func (llm *LLM) Sync(ctx context.Context, mcpClient client.MCPClient) (*LLM, err
 		if err != nil {
 			return nil, err
 		}
-
 
 		// Add the model reply to the history
 		llm.messages = append(llm.messages, ModelMessage{
@@ -112,7 +112,6 @@ func convertMCPToolsToLLMTools(mcpTools []mcp.Tool) []Tool {
 		schema["properties"] = mcpTool.InputSchema.Properties
 		schema["required"] = mcpTool.InputSchema.Required
 
-
 		// Create a new tool
 		tools = append(tools, Tool{
 			Name:        mcpTool.Name,
@@ -142,7 +141,6 @@ func executeMCPToolCall(ctx context.Context, mcpClient client.MCPClient, tool To
 		errResponse := err.Error()
 		return errResponse, true
 	}
-
 
 	if len(executeResponse.Content) != 1 {
 		panic("expected MCP response to have exactly one content")
@@ -238,6 +236,7 @@ func main() {
 	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
 	if openaiAPIKey == "" {
 		slog.Fatal("OPENAI_API_KEY environment variable is required")
+		return
 	}
 
 	// Create MCP client
@@ -247,7 +246,8 @@ func main() {
 		os.Args[2:]...,
 	)
 	if err != nil {
-		slog.Fatalf("Failed to create client: %v", err)
+		slog.Fatalf("Failed to create client: %v\n", err)
+		return
 	}
 	defer c.Close()
 
@@ -266,7 +266,8 @@ func main() {
 
 	initResult, err := c.Initialize(ctx, initRequest)
 	if err != nil {
-		slog.Fatalf("Failed to initialize: %v", err)
+		slog.Printf("Failed to initialize: %v\n", err)
+		return
 	}
 	fmt.Printf(
 		"Initialized with server: %s %s\n\n",
@@ -280,7 +281,8 @@ func main() {
 	toolsRequest := mcp.ListToolsRequest{}
 	tools, err := c.ListTools(ctx, toolsRequest)
 	if err != nil {
-		slog.Fatalf("Failed to list tools: %v", err)
+		slog.Printf("Failed to list tools: %v\n", err)
+		return
 	}
 	for _, tool := range tools.Tools {
 		fmt.Printf("- %s: %s\n", tool.Name, tool.Description)
@@ -302,22 +304,33 @@ func main() {
 	systemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests. SHOW THE RAW OUTPUT OF THE TOOLS"
 	llm = llm.WithSystemPrompt(systemPrompt)
 
-	// Main input loop
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Println("Enter your prompts (type 'exit' to quit):")
-	for {
-		fmt.Print("> ")
-		if !scanner.Scan() {
-			break
-		}
+	rl, err := readline.New("> ")
+	if err != nil {
+		slog.Printf("could not create readline: %v\n", err)
+	}
+	defer rl.Close()
 
-		input := scanner.Text()
-		if input == "exit" {
+	fmt.Println("Enter your prompts (type 'exit' or 'quit' to quit):")
+	for {
+		line, err := rl.Readline()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			fmt.Fprintf(os.Stderr, "failed to read line: %v", err)
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if line == "exit" || line == "quit" {
 			break
 		}
+		readline.AddHistory(line)
 
 		// Add user prompt
-		llm = llm.WithPrompt(ctx, input)
+		llm = llm.WithPrompt(ctx, line)
 
 		// Sync with LLM
 		llm, err = llm.Sync(ctx, c)
@@ -330,9 +343,5 @@ func main() {
 		fmt.Println("\nAssistant:")
 		fmt.Println(llm.GetLastResponse())
 		fmt.Println()
-	}
-
-	if err := scanner.Err(); err != nil {
-		slog.Fatalf("Error reading input: %v", err)
 	}
 }
