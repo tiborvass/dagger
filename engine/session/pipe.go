@@ -61,10 +61,15 @@ type PipeIO struct {
 
 func (w *PipeIO) Write(p []byte) (n int, err error) {
 	err = w.GRPC.Send(&Data{Data: p})
-	if err != nil && !errors.Is(err, io.EOF) {
-		return 0, fmt.Errorf("error writing dagger pipe: %w", err)
+	n = len(p)
+	if err == nil {
+		return n, nil
 	}
-	return len(p), nil
+	// Return io.EOF to conform to io.Writer
+	if errors.Is(err, io.EOF) {
+		return n, io.EOF
+	}
+	return n, fmt.Errorf("error writing dagger pipe: %w", err)
 }
 
 func (r *PipeIO) Read(p []byte) (n int, err error) {
@@ -77,17 +82,18 @@ func (r *PipeIO) Read(p []byte) (n int, err error) {
 	}
 	req, err := r.GRPC.Recv()
 	if err != nil {
+		// Return io.EOF in certain cases to conform to io.Reader
 		if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
 			// canceled
-			return 0, nil
+			return 0, io.EOF
 		}
 		if errors.Is(err, io.EOF) {
 			// stopped
-			return 0, nil
+			return 0, io.EOF
 		}
 		if grpcerrors.Code(err) == codes.Unavailable {
 			// client disconnected (i.e. quitting Dagger out)
-			return 0, nil
+			return 0, io.EOF
 		}
 		return 0, fmt.Errorf("error reading dagger pipe: %w", err)
 	}
