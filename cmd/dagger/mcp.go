@@ -35,7 +35,7 @@ var mcpCmd = &cobra.Command{
 	},
 }
 
-// dagger -m github.com/org/repo mcp key1=val1 key2=val2
+// dagger -m github.com/org/repo mcp
 func mcpStart(ctx context.Context, engineClient *client.Client) error {
 	if mcpSseAddr != "" || !mcpStdio {
 		return errors.New("currently MCP only works with stdio")

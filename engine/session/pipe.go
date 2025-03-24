@@ -36,13 +36,16 @@ func (p PipeAttachable) Register(srv *grpc.Server) {
 }
 
 func (p PipeAttachable) IO(srv Pipe_IOServer) error {
-	rw := ctxio.NewReadWriter(srv.Context(), &PipeIO{GRPC: srv})
+	ctx, cancel := context.WithCancel(p.rootCtx)
+	rw := ctxio.NewReadWriter(ctx, &PipeIO{GRPC: srv})
+	defer cancel()
 
 	go func() {
 		_, err := io.Copy(rw, p.stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pipeattachable stdin copy: %v\n", err)
 		}
+		cancel()
 	}()
 	if _, err := io.Copy(p.stdout, rw); err != nil {
 		fmt.Fprintf(os.Stderr, "pipeattachable stdout copy: %v\n", err)
