@@ -3,7 +3,9 @@ package ctxio
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -96,30 +98,42 @@ func NewReadWriter(ctx context.Context, rw io.ReadWriter) io.ReadWriteCloser {
 	g, _ := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
+		fmt.Fprintln(os.Stderr, "+ctxio copy from rw")
 		_, err := io.Copy(prw, rw)
+		fmt.Fprintln(os.Stderr, "-ctxio copy from rw", err)
 		prw.CloseWithError(err)
+		fmt.Fprintln(os.Stderr, "ctxio prw closed")
 		return err
 	})
 
 	g.Go(func() error {
+		fmt.Fprintln(os.Stderr, "+ctxio copy to rw")
 		_, err := io.Copy(rw, pwr)
+		fmt.Fprintln(os.Stderr, "-ctxio copy to rw")
 		pwr.CloseWithError(err)
+		fmt.Fprintln(os.Stderr, "ctxio pwr closed")
 		return err
 	})
 
 	go func() {
-		if err := g.Wait(); err != nil {
-			prw.CloseWithError(err)
-			pwr.CloseWithError(err)
-		}
+		fmt.Fprintln(os.Stderr, "+ctxio wait")
+		err := g.Wait()
+		fmt.Fprintln(os.Stderr, "-ctxio wait")
+		prw.CloseWithError(err)
+		fmt.Fprintln(os.Stderr, "ctxio prw closed")
+		pwr.CloseWithError(err)
+		fmt.Fprintln(os.Stderr, "ctxio pwr closed")
 	}()
 
 	return &readWriter{PipeReader: prr, PipeWriter: pww}
 }
 
 func (crw *readWriter) Close() error {
+	fmt.Fprintln(os.Stderr, "ctxioR.Close")
 	err1 := crw.PipeReader.Close()
+	fmt.Fprintln(os.Stderr, "ctxioW.Close")
 	err2 := crw.PipeWriter.Close()
+	fmt.Fprintln(os.Stderr, "done ctxioRW.Close", err1, err2)
 	if err1 != nil {
 		return err1
 	}

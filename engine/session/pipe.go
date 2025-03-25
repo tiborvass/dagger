@@ -47,9 +47,11 @@ func (p PipeAttachable) IO(srv Pipe_IOServer) error {
 		}
 		cancel()
 	}()
+	fmt.Fprintln(os.Stderr, "PipeAttachable.IO start stdout copy")
 	if _, err := io.Copy(p.stdout, rw); err != nil {
 		fmt.Fprintf(os.Stderr, "pipeattachable stdout copy: %v\n", err)
 	}
+	fmt.Fprintln(os.Stderr, "PipeAttachable.IO done")
 	return nil
 }
 
@@ -107,6 +109,8 @@ func (r *PipeIO) Read(p []byte) (n int, err error) {
 }
 
 func (p *PipeIO) Close() error {
+	fmt.Fprintln(os.Stderr, "+PipeIO.Close")
+	defer fmt.Fprintln(os.Stderr, "-PipeIO.Close")
 	if c, ok := p.GRPC.(interface {
 		CloseSend() error
 	}); ok {
