@@ -154,7 +154,10 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 				text = string(b)
 			}
 
-			newTools := llm.env.Tools(dag)
+			newTools, err := llm.env.Tools(dag)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get tools: %w", err)
+			}
 			mcpTools := make([]mcpserver.ServerTool, 0, len(newTools))
 			for _, tool := range newTools {
 				// Skipping methods that return ID
@@ -188,7 +191,11 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 		return nil
 	}
 
-	for _, tool := range llm.env.Tools(dag) {
+	tools, err := llm.env.Tools(dag)
+	if err != nil {
+		return fmt.Errorf("failed to get tools: %w", err)
+	}
+	for _, tool := range tools {
 		if err := addTool(tool); err != nil {
 			return err
 		}
