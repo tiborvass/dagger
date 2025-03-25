@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/shlex"
@@ -325,6 +326,11 @@ const InstrumentationLibrary = "dagger.io/cli"
 var opts dagui.FrontendOpts
 
 func main() {
+	time.AfterFunc(10*time.Second, func() {
+		fmt.Fprintln(os.Stderr, "closing stdin")
+		os.Stdin.Close()
+		fmt.Fprintln(os.Stderr, "stdin closed")
+	})
 	parseGlobalFlags()
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v
