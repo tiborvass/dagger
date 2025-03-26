@@ -48,11 +48,14 @@ func (s llmSchema) Install() {
 			ArgDoc("file", "The file to read the prompt from"),
 		dagql.Func("withQuery", s.withQuery).
 			Doc("Provide the entire Query object to the LLM"),
-		dagql.Func("withPromptVar", s.setString).
+		dagql.Func("withPromptVar", s.withPromptVar).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
 			ArgDoc("value", "The variable value"),
-		dagql.Func("setString", s.setString).
+		dagql.Func("withSystemPrompt", s.withSystemPrompt).
+			Doc("Add a system prompt to the LLM's environment").
+			ArgDoc("prompt", "The system prompt to send"),
+		dagql.Func("setString", s.withPromptVar).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
 			ArgDoc("value", "The variable value"),
@@ -73,14 +76,19 @@ func (s llmSchema) Install() {
 		dagql.Func("loop", s.loop).
 			// Deprecated("use sync").
 			Doc("synchronize LLM state"),
+		dagql.Func("attempt", s.attempt).
+			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
 		dagql.Func("variables", s.variables).
 			Doc("list variables in the LLM environment"),
 		dagql.Func("currentType", s.currentType).
 			Doc("returns the type of the current state"),
+		dagql.Func("tokenUsage", s.tokenUsage).
+			Doc("returns the token usage of the current state"),
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMVariable]{}.Install(s.srv)
+	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
 	hook := core.LLMHook{Server: s.srv}
 	llmObjType, ok := s.srv.ObjectType(new(core.LLM).Type().Name())
 	if !ok {
@@ -119,14 +127,20 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) withQuery(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.With(ctx, s.srv, s.srv.Root())
+	return llm.With(s.srv.Root()), nil
 }
 
-func (s *llmSchema) setString(ctx context.Context, llm *core.LLM, args struct {
-	Name  string
-	Value dagql.String
+func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
+	Prompt string
 }) (*core.LLM, error) {
-	return llm.Set(ctx, s.srv, args.Name, args.Value)
+	return llm.WithSystemPrompt(args.Prompt), nil
+}
+
+func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.LLM, args struct {
+	Name  string
+	Value string
+}) (*core.LLM, error) {
+	return llm.WithPromptVar(args.Name, args.Value), nil
 }
 
 func (s *llmSchema) getString(ctx context.Context, llm *core.LLM, args struct {
@@ -154,6 +168,13 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.Sync(ctx, s.srv)
+}
+
+func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
+	Number int
+}) (*core.LLM, error) {
+	// nothing to do; we've "forked" it by nature of changing the query
+	return llm, nil
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
@@ -198,4 +219,8 @@ func (s *llmSchema) variables(ctx context.Context, llm *core.LLM, _ struct{}) ([
 
 func (s *llmSchema) currentType(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Nullable[dagql.String], error) {
 	return llm.CurrentType(ctx, s.srv)
+}
+
+func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
+	return llm.TokenUsage(ctx, s.srv)
 }

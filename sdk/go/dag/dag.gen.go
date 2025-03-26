@@ -44,12 +44,6 @@ func Close() error {
 	return err
 }
 
-// Retrieves a container builtin to the engine.
-func BuiltinContainer(digest string) *dagger.Container {
-	client := initClient()
-	return client.BuiltinContainer(digest)
-}
-
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()
@@ -139,9 +133,9 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // Initialize a Large Language Model (LLM)
-func Llm(opts ...dagger.LlmOpts) *dagger.LLM {
+func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	client := initClient()
-	return client.Llm(opts...)
+	return client.LLM(opts...)
 }
 
 // Load a CacheVolume from its ID.
@@ -298,6 +292,12 @@ func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceT
 func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
 	client := initClient()
 	return client.LoadLLMFromID(id)
+}
+
+// Load a LLMTokenUsage from its ID.
+func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
+	client := initClient()
+	return client.LoadLLMTokenUsageFromID(id)
 }
 
 // Load a LLMVariable from its ID.

@@ -21,6 +21,7 @@ func (m *GoProgrammer) Run(
 	return m.llm(assignment).ToyWorkspace().Container()
 }
 
+// this is a hack at least until we can return the LLM type to have a better way to save/replay history
 func (m *GoProgrammer) Save(
 	ctx context.Context,
 	assignment string,
@@ -31,7 +32,7 @@ func (m *GoProgrammer) Save(
 func (m *GoProgrammer) llm(
 	assignment string,
 ) *dagger.LLM {
-	return dag.Llm(dagger.LlmOpts{Model: m.Model}).
+	return dag.LLM(dagger.LLMOpts{Model: m.Model}).
 		WithToyWorkspace(dag.ToyWorkspace()).
 		WithPromptVar("assignment", assignment).
 		WithPrompt(

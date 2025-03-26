@@ -14,16 +14,6 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
-     * Retrieves a container builtin to the engine.
-     */
-    public function builtinContainer(string $digest): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('builtinContainer');
-        $innerQueryBuilder->setArgument('digest', $digest);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key, ?string $namespace = ''): CacheVolume
@@ -460,6 +450,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a LLMTokenUsage from its ID.
+     */
+    public function loadLLMTokenUsageFromID(LLMTokenUsageId|LLMTokenUsage $id): LLMTokenUsage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMTokenUsageFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

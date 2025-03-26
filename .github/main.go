@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.16.3"
+	daggerVersion      = "v0.17.1"
 	upstreamRepository = "dagger/dagger"
 	ubuntuVersion      = "24.04"
 	defaultRunner      = "ubuntu-" + ubuntuVersion
@@ -150,7 +150,6 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	for _, sdk := range sdks {
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
-			WithJob(runner.Job(sdk, command)).
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
 				DaggerVersion: ".",
 				Runner:        []string{SilverRunner(true)},
@@ -186,12 +185,18 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
+				Runner: []string{AltPlatinumRunner()},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
+			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
+			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
+			}},
+			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
