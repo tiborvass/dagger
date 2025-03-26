@@ -383,6 +383,7 @@ func main() {
 	if err != nil {
 		slog.Printf("could not create readline: %v\n", err)
 	}
+	rl.CaptureExitSignal()
 	defer rl.Close()
 
 	fmt.Println("Enter your prompts (type 'exit' or 'quit' to quit):")

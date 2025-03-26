@@ -8,8 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -241,14 +239,14 @@ func ServeStdio(server *MCPServer, opts ...StdioOption) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Set up signal handling
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	// // Set up signal handling
+	// sigChan := make(chan os.Signal, 1)
+	// signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
-	go func() {
-		<-sigChan
-		cancel()
-	}()
+	// go func() {
+	// 	<-sigChan
+	// 	cancel()
+	// }()
 
 	return s.Listen(ctx, os.Stdin, os.Stdout)
 }
