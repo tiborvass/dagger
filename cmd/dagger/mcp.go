@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"dagger.io/dagger/querybuilder"
@@ -23,35 +22,15 @@ func init() {
 	mcpCmd.PersistentFlags().StringVar(&mcpSseAddr, "sse-addr", "", "Address of the MCP SSE server (no SSE server if empty)")
 }
 
-type cancelingReadCloser struct {
-	io.ReadCloser
-	cancel context.CancelFunc
-}
-
-func (cc cancelingReadCloser) Close() error {
-	cc.cancel()
-	return cc.ReadCloser.Close()
-}
-
-type cancelingWriteCloser struct {
-	io.WriteCloser
-	cancel context.CancelFunc
-}
-
-func (cc cancelingWriteCloser) Close() error {
-	cc.cancel()
-	return cc.WriteCloser.Close()
-}
-
 var mcpCmd = &cobra.Command{
 	Use:   "mcp [options]",
 	Short: "Expose a dagger module as an MCP server",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx, cancel := context.WithCancel(cmd.Context())
+		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
 		return withEngine(ctx, client.Params{
-			Stdin:  cancelingReadCloser{ReadCloser: os.Stdin, cancel: cancel},
-			Stdout: cancelingWriteCloser{WriteCloser: os.Stdout, cancel: cancel},
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
 		}, mcpStart)
 	},
 	Hidden: true,
