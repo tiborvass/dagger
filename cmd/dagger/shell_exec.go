@@ -280,7 +280,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		}
 
 		// Command is a dependency or module ref, so this is the constructor call
-		if st.IsEmpty() {
+		if st.IsEmpty() && md.SDKSource != "" {
 			return h.constructorCall(ctx, md, st, args)
 		}
 	}
@@ -708,7 +708,7 @@ func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Re
 	var err error
 
 	// Example: `build` (i.e., omitted constructor)
-	if def.HasModule() && st.IsEmpty() {
+	if def.HasModule() && st.IsEmpty() && def.SDKSource != "" {
 		st, err = h.constructorCall(ctx, def, st, nil)
 		if err != nil {
 			return nil, err

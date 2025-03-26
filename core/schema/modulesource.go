@@ -2127,13 +2127,103 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	return genDirInst, nil
 }
 
+// runModuleDefinition requires an SDK
+func (s *moduleSourceSchema) runModuleDefinition(
+	ctx context.Context,
+	mod *core.Module,
+	src dagql.Instance[*core.ModuleSource],
+	srcInstContentHashed dagql.Instance[*core.ModuleSource],
+) (err error) {
+	modName := src.Self.ModuleName
+	// get the runtime container, which is what is exec'd when calling functions in the module
+	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
+	if err != nil {
+		return fmt.Errorf("failed to get module runtime: %w", err)
+	}
+
+	// construct a special function with no object or function name, which tells
+	// the SDK to return the module's definition (in terms of objects, fields and
+	// functions)
+	getModDefCtx, getModDefSpan := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
+	getModDefFn, err := core.NewModFunction(
+		getModDefCtx,
+		src.Self.Query,
+		mod,
+		nil,
+		mod.Runtime,
+		core.NewFunction("", &core.TypeDef{
+			Kind:     core.TypeDefKindObject,
+			AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
+		}))
+	if err != nil {
+		getModDefSpan.End()
+		return fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
+	}
+	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
+		Cache:          true,
+		SkipSelfSchema: true,
+		Server:         s.dag,
+		// Don't include the digest for the current call (which is a bunch of module source stuff, including
+		// APIs that are cached per-client when local sources are involved) in the cache key of this
+		// function call. That would needlessly invalidate the cache more than is needed, similar to how
+		// we want to scope the codegen cache keys by the content digested source instance above.
+		SkipCallDigestCacheKey: true,
+	})
+	if err != nil {
+		getModDefSpan.End()
+		return fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
+	}
+	if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
+		var postCall func(context.Context) error
+		postCall, result = postCallRes.GetPostCall()
+		if postCall != nil {
+			if err := postCall(ctx); err != nil {
+				getModDefSpan.End()
+				return fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+			}
+		}
+	}
+
+	resultInst, ok := result.(dagql.Instance[*core.Module])
+	if !ok {
+		getModDefSpan.End()
+		return fmt.Errorf("expected Module result, got %T", result)
+	}
+	getModDefSpan.End()
+
+	// update the module's types with what was returned from the call above
+	mod.Description = resultInst.Self.Description
+	for _, obj := range resultInst.Self.ObjectDefs {
+		mod, err = mod.WithObject(ctx, obj)
+		if err != nil {
+			return fmt.Errorf("failed to add object to module %q: %w", modName, err)
+		}
+	}
+	for _, iface := range resultInst.Self.InterfaceDefs {
+		mod, err = mod.WithInterface(ctx, iface)
+		if err != nil {
+			return fmt.Errorf("failed to add interface to module %q: %w", modName, err)
+		}
+	}
+	for _, enum := range resultInst.Self.EnumDefs {
+		mod, err = mod.WithEnum(ctx, enum)
+		if err != nil {
+			return fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
+		}
+	}
+	return nil
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Instance[*core.Module], err error) {
-	if src.Self.ModuleName == "" || src.Self.SDK == nil || src.Self.SDK.Source == "" {
-		return inst, fmt.Errorf("module name and SDK must be set")
+	if src.Self.ModuleName == "" {
+		return inst, fmt.Errorf("module name must be set")
+	}
+	if src.Self.SDK != nil && src.Self.SDK.Source == "" {
+		return inst, fmt.Errorf("SDK source must be present when SDK is configured")
 	}
 
 	engineVersion := src.Self.EngineVersion
@@ -2171,81 +2261,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 	srcInstContentHashed := src.WithDigest(digest.Digest(src.Self.Digest))
 
-	// get the runtime container, which is what is exec'd when calling functions in the module
-	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module runtime: %w", err)
-	}
-
-	// construct a special function with no object or function name, which tells
-	// the SDK to return the module's definition (in terms of objects, fields and
-	// functions)
-	getModDefCtx, getModDefSpan := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
-	modName := src.Self.ModuleName
-	getModDefFn, err := core.NewModFunction(
-		getModDefCtx,
-		src.Self.Query,
-		mod,
-		nil,
-		mod.Runtime,
-		core.NewFunction("", &core.TypeDef{
-			Kind:     core.TypeDefKindObject,
-			AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
-		}))
-	if err != nil {
-		getModDefSpan.End()
-		return inst, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
-	}
-	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
-		Cache:          true,
-		SkipSelfSchema: true,
-		Server:         s.dag,
-		// Don't include the digest for the current call (which is a bunch of module source stuff, including
-		// APIs that are cached per-client when local sources are involved) in the cache key of this
-		// function call. That would needlessly invalidate the cache more than is needed, similar to how
-		// we want to scope the codegen cache keys by the content digested source instance above.
-		SkipCallDigestCacheKey: true,
-	})
-	if err != nil {
-		getModDefSpan.End()
-		return inst, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
-	}
-	if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
-		var postCall func(context.Context) error
-		postCall, result = postCallRes.GetPostCall()
-		if postCall != nil {
-			if err := postCall(ctx); err != nil {
-				getModDefSpan.End()
-				return inst, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
-			}
-		}
-	}
-
-	resultInst, ok := result.(dagql.Instance[*core.Module])
-	if !ok {
-		getModDefSpan.End()
-		return inst, fmt.Errorf("expected Module result, got %T", result)
-	}
-	getModDefSpan.End()
-
-	// update the module's types with what was returned from the call above
-	mod.Description = resultInst.Self.Description
-	for _, obj := range resultInst.Self.ObjectDefs {
-		mod, err = mod.WithObject(ctx, obj)
-		if err != nil {
-			return inst, fmt.Errorf("failed to add object to module %q: %w", modName, err)
-		}
-	}
-	for _, iface := range resultInst.Self.InterfaceDefs {
-		mod, err = mod.WithInterface(ctx, iface)
-		if err != nil {
-			return inst, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
-		}
-	}
-	for _, enum := range resultInst.Self.EnumDefs {
-		mod, err = mod.WithEnum(ctx, enum)
-		if err != nil {
-			return inst, fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
+	if src.Self.SDKImpl != nil {
+		if err := s.runModuleDefinition(ctx, mod, src, srcInstContentHashed); err != nil {
+			return inst, err
 		}
 	}
 
@@ -2253,7 +2271,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, srcInstContentHashed, mod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
+		return inst, fmt.Errorf("failed to create instance for module %q: %w", src.Self.ModuleName, err)
 	}
 
 	return inst, nil

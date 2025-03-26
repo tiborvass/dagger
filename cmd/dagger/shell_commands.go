@@ -487,16 +487,16 @@ Writes any specified operands, separated by single blank (' ') characters and fo
 			Use: ".wait",
 			Description: `Wait for background processes to complete
 
-The return status is 0 if all specified processes exit successfully. 
-If any process exits with a nonzero status, wait returns that status. 
+The return status is 0 if all specified processes exit successfully.
+If any process exits with a nonzero status, wait returns that status.
 `,
 		},
 		&ShellCommand{
 			Use: ".cd [path | url]",
-			Description: `Change the current working directory 
+			Description: `Change the current working directory
 
 Absolute and relative paths are resolved in relation to the same context directory.
-Using a git URL changes the context. Only the initial context can target local 
+Using a git URL changes the context. Only the initial context can target local
 modules in different contexts.
 
 If the target path is in a different module within the same context, it will be

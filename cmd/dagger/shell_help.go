@@ -152,7 +152,7 @@ func combineUsages(groups ...iter.Seq2[string, string]) iter.Seq[string] {
 func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		def, _ := h.GetModuleDef(nil)
-		if def == nil {
+		if def == nil || def.SDKSource == "" {
 			return
 		}
 
@@ -180,7 +180,7 @@ func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		def, _ := h.GetModuleDef(nil)
-		if def == nil {
+		if def == nil || def.SDKSource == "" {
 			return
 		}
 
@@ -384,7 +384,7 @@ func (d ShellDoc) String() string {
 func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) string {
 	sb := new(strings.Builder)
 
-	if fn == md.MainObject.AsObject.Constructor {
+	if md.MainObject != nil && fn == md.MainObject.AsObject.Constructor {
 		sb.WriteString(h.modRelPath(md))
 	} else {
 		sb.WriteString(fn.CmdName())
@@ -434,6 +434,11 @@ func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 
 	meta := new(strings.Builder)
 	meta.WriteString(m.Name)
+
+	// Module has no SDK
+	if m.SDKSource == "" {
+		return doc.String()
+	}
 
 	// Prefer description on main object
 	description := m.MainObject.AsObject.Description

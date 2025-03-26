@@ -293,7 +293,15 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	// are more likely to be from wrong CLI usage.
 	fc.showUsage = true
 
-	cmd, flags, err := fc.loadCommand(c, a)
+	var flags []string
+
+	if fc.mod.MainObject == nil {
+		return fc.Help(&cobra.Command{
+			Use: "no functions to call in a module initialized without SDK. See dagger init --help",
+		})
+	}
+
+	cmd, flags, err = fc.loadCommand(c, a)
 	if err != nil {
 		return err
 	}

@@ -138,6 +138,8 @@ type moduleDef struct {
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
+
+	SDKSource         string
 	Source            *dagger.ModuleSource
 	SourceKind        dagger.ModuleSourceKind
 	SourceRoot        string
@@ -234,7 +236,13 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		})
 	}
 
+	SDKsrc, err := source.SDK().Source(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	def := &moduleDef{
+		SDKSource:         SDKsrc,
 		Source:            source,
 		SourceKind:        res.Source.Kind,
 		SourceDigest:      res.Source.Digest,
@@ -325,8 +333,12 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 		}
 	}
 
+	if m.SDKSource == "" {
+		return nil
+	}
+
 	if m.MainObject == nil {
-		return fmt.Errorf("main object not found, check that your module's name and main object match")
+		return fmt.Errorf("main object not found, check that your module's name and main object match: %+v", m.Source.SDK())
 	}
 
 	m.LoadFunctionTypeDefs(m.MainObject.AsObject.Constructor)
@@ -422,7 +434,7 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
 	// This avoids an issue with module constructors overriding core functions.
 	// See https://github.com/dagger/dagger/issues/9122
-	if m.HasModule() && fp.ProviderName() == "Query" && m.MainObject.AsObject.Constructor.CmdName() == functionName {
+	if m.HasModule() && fp.ProviderName() == "Query" && m.MainObject != nil && m.MainObject.AsObject.Constructor.CmdName() == functionName {
 		return m.MainObject.AsObject.Constructor, nil
 	}
 	for _, fn := range fp.GetFunctions() {
@@ -532,7 +544,7 @@ func (m *moduleDef) HasCoreFunction(name string) bool {
 }
 
 func (m *moduleDef) HasMainFunction(name string) bool {
-	return m.HasFunction(m.MainObject.AsFunctionProvider(), name)
+	return m.MainObject != nil && m.HasFunction(m.MainObject.AsFunctionProvider(), name)
 }
 
 // HasFunction checks if an object has a function with the given name.
