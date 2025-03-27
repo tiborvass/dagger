@@ -40,6 +40,75 @@ func (p PipeAttachable) IO(srv Pipe_IOServer) error {
 	go io.Copy(pio, ctxio.NewReader(ctx, p.stdin))
 	_, err := io.Copy(p.stdout, ctxio.NewReader(ctx, pio))
 	return err
+	/*
+		Naive logic:
+		go io.Copy(srv, p.stdin)
+		io.Copy(p.stdout, srv)
+		======================================
+		Problem1: need to stop both io.Copy when a given context is cancelled
+		Problem2: need to cancel context when one of the io.Copy is stopped
+		Problem3: not safe to call client.CloseSend concurrently with client.Send
+		=====================================
+		go io.Copy(rw, ctxio.NewReader(ctx, p.stdin)
+		io.Copy(p.stdout, ctxio.NewReader(ctx, rw))
+		=====================================
+		go p.forwardStdin(ctx, srv, p.stdin)
+		for {
+			req, err := src.Recv()
+			if err != nil {
+				...
+			}
+			data := req.GetData()
+			p.stdout.Write(data)
+		}
+
+		forwardStdin() {
+			// In order to stop reading from stdin when the context is cancelled,
+			// we proxy the reads through a Pipe which we can close without closing
+			// the underlying stdin.
+			pipeR, pipeW := io.Pipe()
+			close := func() {
+				pipeR.Close()
+				pipeW.Close()
+			}
+			defer close()
+			go io.Copy(pipeW, stdin)
+			go func() {
+				<-ctx.Done()
+				close()
+			}()
+
+			for {
+				pipeR.Read(buf)
+				srv.Send(buf)
+			}
+		}
+	*/
+	/*
+		_ = os.Stdin
+		ctx, cancel := context.WithCancel(p.rootCtx)
+		defer cancel()
+		pio := &PipeIO{GRPC: srv}
+		defer pio.Close()
+		go func() {
+			<-ctx.Done()
+			pio.Close()
+		}()
+
+		go func() {
+			_, err := io.Copy(rw, p.stdin)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "pipeattachable stdin copy: %v\n", err)
+			}
+			cancel()
+		}()
+		fmt.Fprintln(os.Stderr, "PipeAttachable.IO start stdout copy")
+		if _, err := io.Copy(p.stdout, rw); err != nil {
+			fmt.Fprintf(os.Stderr, "pipeattachable stdout copy: %v\n", err)
+		}
+		fmt.Fprintln(os.Stderr, "PipeAttachable.IO done")
+		return nil
+	*/
 }
 
 // PipeIO transforms a Pipe_IOServer or a Pipe_IOClient into an io.ReadWriter
