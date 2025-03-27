@@ -258,7 +258,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 		}
 		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
 			// Cannot add functions from a module initialized without an SDK
-			if md.MainObject != nil {
+			if md.SDKSource != "" {
 				for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
 					results = append(results, fn.CmdName())
 				}

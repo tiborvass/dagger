@@ -295,7 +295,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	var flags []string
 
-	if fc.mod.MainObject == nil {
+	if fc.mod.SDKSource == "" {
 		return fc.Help(&cobra.Command{
 			Use: "no functions to call in a module initialized without SDK. See dagger init --help",
 		})

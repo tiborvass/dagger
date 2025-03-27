@@ -434,7 +434,7 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
 	// This avoids an issue with module constructors overriding core functions.
 	// See https://github.com/dagger/dagger/issues/9122
-	if m.HasModule() && fp.ProviderName() == "Query" && m.MainObject != nil && m.MainObject.AsObject.Constructor.CmdName() == functionName {
+	if m.HasModule() && fp.ProviderName() == "Query" && m.SDKSource != "" && m.MainObject.AsObject.Constructor.CmdName() == functionName {
 		return m.MainObject.AsObject.Constructor, nil
 	}
 	for _, fn := range fp.GetFunctions() {
@@ -544,7 +544,7 @@ func (m *moduleDef) HasCoreFunction(name string) bool {
 }
 
 func (m *moduleDef) HasMainFunction(name string) bool {
-	return m.MainObject != nil && m.HasFunction(m.MainObject.AsFunctionProvider(), name)
+	return m.SDKSource != "" && m.HasFunction(m.MainObject.AsFunctionProvider(), name)
 }
 
 // HasFunction checks if an object has a function with the given name.

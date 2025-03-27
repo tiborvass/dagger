@@ -384,7 +384,7 @@ func (d ShellDoc) String() string {
 func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) string {
 	sb := new(strings.Builder)
 
-	if md.MainObject != nil && fn == md.MainObject.AsObject.Constructor {
+	if md.SDKSource != "" && fn == md.MainObject.AsObject.Constructor {
 		sb.WriteString(h.modRelPath(md))
 	} else {
 		sb.WriteString(fn.CmdName())

@@ -66,7 +66,7 @@ available functions.
 			if err != nil {
 				return err
 			}
-			if mod.MainObject == nil {
+			if mod.SDKSource == "" {
 				return functionListRun(cmd.OutOrStdout(), nil, nil)
 			}
 			o := mod.MainObject.AsFunctionProvider()
