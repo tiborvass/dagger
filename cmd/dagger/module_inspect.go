@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	stddebug "runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -426,6 +427,7 @@ func (m *moduleDef) GetObject(name string) *modObject {
 func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunction, error) {
 	fp := m.GetFunctionProvider(objectName)
 	if fp == nil {
+		stddebug.PrintStack()
 		return nil, fmt.Errorf("module %q does not have a %q object or interface", m.Name, objectName)
 	}
 	return m.GetFunction(fp, functionName)
