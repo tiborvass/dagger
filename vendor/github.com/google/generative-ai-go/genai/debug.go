@@ -25,7 +25,7 @@ import (
 )
 
 // printRequests controls whether request protobufs are written to stderr.
-var printRequests = false
+var printRequests = true
 
 func debugPrint(m proto.Message) {
 	if !printRequests {
