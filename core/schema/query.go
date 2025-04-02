@@ -102,6 +102,7 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 	if err != nil {
 		return inst, fmt.Errorf("failed to marshal introspection JSON: %w", err)
 	}
+	println(string(moduleSchemaJSON))
 
 	const schemaJSONFilename = "schema.json"
 	const perm fs.FileMode = 0644
