@@ -35,6 +35,7 @@ func main() {
 	}
 
 	schemaTypes := introspection.Types{}
+
 	for _, schemaType := range schemaResp.Schema.Types {
 		if strings.HasPrefix(schemaType.Name, "_") {
 			continue

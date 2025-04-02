@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -70,6 +71,8 @@ type LLM struct {
 
 	// The environment accessible to the LLM, exposed over MCP
 	mcp *MCP
+	// Whether the LLM needs instructions on how to use the tool scheme
+	needsSystemPrompt bool
 }
 
 type LLMEndpoint struct {
@@ -437,12 +440,23 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		return nil, fmt.Errorf("no valid LLM endpoint configuration")
 	}
 	return &LLM{
-		Query:       query,
-		Endpoint:    endpoint,
-		maxAPICalls: maxAPICalls,
-		mcp:         NewEnv().MCP(endpoint),
-		once:        &sync.Once{},
+		Query:             query,
+		Endpoint:          endpoint,
+		maxAPICalls:       maxAPICalls,
+		mcp:               NewMCP(query, nil),
+		once:              &sync.Once{},
+		needsSystemPrompt: endpoint.Provider == Google,
 	}, nil
+}
+
+//go:embed llm_dagger_prompt.md
+var defaultSystemPrompt string
+
+func (llm *LLM) DefaultSystemPrompt() string {
+	if llm.needsSystemPrompt {
+		return defaultSystemPrompt
+	}
+	return ""
 }
 
 // loadLLMRouter creates an LLM router that routes to the root client
@@ -591,7 +605,7 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	messages := llm.messages
 
 	// inject default system prompt if none are found
-	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+	if prompt := llm.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
 		return append([]ModelMessage{
 			{
 				Role:    "system",
@@ -847,7 +861,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.mcp = env.MCP(llm.Endpoint)
+	llm.mcp = env.MCP(llm.Query)
 	return llm
 }
 

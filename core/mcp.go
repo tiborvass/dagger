@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,39 +38,36 @@ type LLMTool struct {
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
-	env *Env
+	env   *Env
+	query *Query
 	// The currently selected object.
 	current dagql.Object
-	// Whether the LLM needs instructions on how to use the tool scheme
-	needsSystemPrompt bool
 	// Only show these functions, if non-empty
 	functionMask map[string]bool
 	// Indicates that the model has returned
 	returned bool
 }
 
-func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
+func NewMCP(query *Query, env *Env) *MCP {
+	if env == nil {
+		env = NewEnv()
+	}
 	m := &MCP{
 		env:          env,
 		functionMask: map[string]bool{},
+		query:        query,
 	}
 	if env.Root() != nil {
 		m.Select(env.Root())
 	}
-	if endpoint != nil {
-		m.needsSystemPrompt = (endpoint.Provider == Google)
-	}
 	return m
 }
 
-//go:embed llm_dagger_prompt.md
-var defaultSystemPrompt string
-
-func (m *MCP) DefaultSystemPrompt() string {
-	if m.needsSystemPrompt {
-		return defaultSystemPrompt
+func (*MCP) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "_MCP",
+		NonNull:   true,
 	}
-	return ""
 }
 
 func (m *MCP) WithEnvironment(env *Env) *MCP {

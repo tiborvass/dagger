@@ -46,8 +46,8 @@ func NewEnv() *Env {
 }
 
 // Expose this environment for LLM consumption via MCP.
-func (env *Env) MCP(endpoint *LLMEndpoint) *MCP {
-	return newMCP(env, endpoint)
+func (env *Env) MCP(query *Query) *MCP {
+	return NewMCP(query, env)
 }
 
 func (env *Env) Clone() *Env {
@@ -260,6 +260,7 @@ type EnvHook struct {
 // the introspection JSON that module SDKs use for codegen.
 var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&Host{},
+	&MCP{},
 
 	&Engine{},
 	&EngineCache{},
