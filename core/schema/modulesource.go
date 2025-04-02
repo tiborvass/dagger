@@ -2132,8 +2132,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Instance[*core.Module], err error) {
-	if src.Self.ModuleName == "" || src.Self.SDK == nil || src.Self.SDK.Source == "" {
-		return inst, fmt.Errorf("module name and SDK must be set")
+	if src.Self.ModuleName == "" {
+		return inst, fmt.Errorf("module name must be set")
 	}
 
 	engineVersion := src.Self.EngineVersion
