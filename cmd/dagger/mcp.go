@@ -81,10 +81,9 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 
 	fmt.Fprintf(os.Stderr, "Exposing module %q as an MCP server on standard input/output\n", modName)
 	q = q.Root().
-		Select("llm").
-		Select("withEnv").
+		Select("__mcp").
 		Arg("env", envID).
-		Select("__mcp")
+		Select("__serve")
 
 	var response any
 	if err := makeRequest(ctx, q, &response); err != nil {

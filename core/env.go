@@ -237,6 +237,7 @@ type EnvHook struct {
 // the introspection JSON that module SDKs use for codegen.
 var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&Host{},
+	&MCP{},
 
 	&Engine{},
 	&EngineCache{},
