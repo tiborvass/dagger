@@ -407,11 +407,9 @@ func (s *moduleSourceSchema) localModuleSource(
 			}
 
 			println("🍎🍎🍎 yolo", localSrc.SDK)
-			if localSrc.SDK != nil {
-				localSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
-				if err != nil {
-					return fmt.Errorf("failed to load sdk for local module source: %w", err)
-				}
+			localSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
+			if err != nil {
+				return fmt.Errorf("failed to load sdk for local module source: %w", err)
 			}
 
 			return nil
@@ -570,11 +568,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 		}
 
 		println("🍎🍎🍎 yologit", gitSrc.SDK)
-		if gitSrc.SDK != nil {
-			gitSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
-			if err != nil {
-				return fmt.Errorf("failed to load sdk for git module source: %w", err)
-			}
+		gitSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
+		if err != nil {
+			return fmt.Errorf("failed to load sdk for git module source: %w", err)
 		}
 
 		return nil
@@ -692,22 +688,20 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	var eg errgroup.Group
 
-	if dirSrc.SDK != nil {
-		eg.Go(func() error {
-			if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
-				return err
-			}
+	eg.Go(func() error {
+		if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
+			return err
+		}
 
-			var err error
-			println("🍎🍎🍎 yolodir", dirSrc.SDK)
-			dirSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
-			if err != nil {
-				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
-			}
+		var err error
+		println("🍎🍎🍎 yolodir", dirSrc.SDK)
+		dirSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
+		if err != nil {
+			return fmt.Errorf("failed to load sdk for dir module source: %w", err)
+		}
 
-			return nil
-		})
-	}
+		return nil
+	})
 
 	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(dirSrc.ConfigDependencies))
 	for i, depCfg := range dirSrc.ConfigDependencies {
@@ -1183,8 +1177,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 	src = src.Clone()
 	if args.Source == "" {
 		src.SDK = nil
-		src.SDKImpl = nil
-
+		src.SDKImpl, _ = newSDKLoader(s.dag).sdkForModule(ctx, src.Query, nil, nil)
 		src.Digest = src.CalcDigest().String()
 		return src, nil
 	}
@@ -1196,7 +1189,6 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 
 	// reload the sdk implementation too
 	var err error
-	println("🍎🍎🍎 yolowithsdk", src.SDK)
 	src.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, src.Query, src.SDK, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
