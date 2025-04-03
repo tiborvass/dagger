@@ -35,6 +35,7 @@ func newSDKLoader(dag *dagql.Server) *sdkLoader {
 type SDK string
 
 const (
+	SDKNo         SDK = ""
 	SDKGo         SDK = "go"
 	SDKPython     SDK = "python"
 	SDKTypescript SDK = "typescript"
@@ -46,6 +47,7 @@ const (
 // this list is to format the invalid sdk msg
 // and keeping that in sync with builtinSDK func
 var validInbuiltSDKs = []SDK{
+	SDKNo,
 	SDKGo,
 	SDKPython,
 	SDKTypescript,
@@ -62,9 +64,8 @@ func (s *sdkLoader) sdkForModule(
 	parentSrc *core.ModuleSource,
 ) (core.SDK, error) {
 	if sdk == nil {
-		return nil, errors.New("sdk ref is required")
+		sdk = &core.SDKConfig{}
 	}
-
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
 	defer span.End()
 
@@ -162,6 +163,8 @@ func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.
 	}
 
 	switch sdkNameParsed {
+	case "":
+		return &noSDK{}, nil
 	case SDKGo:
 		return &goSDK{root: root, dag: s.dag, rawConfig: sdk.Config}, nil
 	case SDKPython:
@@ -536,6 +539,38 @@ func (s *sdkLoader) loadBuiltinSDK(
 	}
 
 	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config)
+}
+
+type noSDK struct{}
+
+func (sdk *noSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
+	return dagql.NewStringArray(), nil
+}
+
+func (sdk *noSDK) GenerateClient(
+	ctx context.Context,
+	modSource dagql.Instance[*core.ModuleSource],
+	deps *core.ModDeps,
+	outputDir string,
+	dev bool,
+) (inst dagql.Instance[*core.Directory], err error) {
+	return inst, nil
+}
+
+func (sdk *noSDK) Codegen(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.Instance[*core.ModuleSource],
+) (_ *core.GeneratedCode, rerr error) {
+	return nil, nil
+}
+
+func (sdk *noSDK) Runtime(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.Instance[*core.ModuleSource],
+) (_ *core.Container, rerr error) {
+	return nil, nil
 }
 
 const (
