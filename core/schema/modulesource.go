@@ -406,6 +406,7 @@ func (s *moduleSourceSchema) localModuleSource(
 				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
+			println("🍎🍎🍎 yolo", localSrc.SDK)
 			if localSrc.SDK != nil {
 				localSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
 				if err != nil {
@@ -568,6 +569,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 			return fmt.Errorf("failed to load git module source context: %w", err)
 		}
 
+		println("🍎🍎🍎 yologit", gitSrc.SDK)
 		if gitSrc.SDK != nil {
 			gitSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
 			if err != nil {
@@ -697,6 +699,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			}
 
 			var err error
+			println("🍎🍎🍎 yolodir", dirSrc.SDK)
 			dirSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
@@ -1193,6 +1196,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 
 	// reload the sdk implementation too
 	var err error
+	println("🍎🍎🍎 yolowithsdk", src.SDK)
 	src.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, src.Query, src.SDK, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
