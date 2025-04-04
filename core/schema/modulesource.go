@@ -2173,8 +2173,10 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	if src.Self.SDK == nil || src.Self.SDK.Source == "" {
 		obj := &core.ModuleObject{
-			Module:  mod,
-			TypeDef: &core.ObjectTypeDef{Name: modName},
+			Module: mod,
+			TypeDef: &core.ObjectTypeDef{
+				Name: modName,
+			},
 		}
 		obj.Install(ctx, s.dag)
 		mod, err = mod.WithObject(ctx, &core.TypeDef{

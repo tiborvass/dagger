@@ -271,6 +271,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module
+	println("🍎🍎🍎 constructor", objDef.OriginalName, mod.OriginalName)
 	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
@@ -279,6 +280,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	fields := obj.fields()
 
 	funs, err := obj.functions(ctx, dag)
+	println("🍎🍎 len(funs)=", len(funs))
 	if err != nil {
 		return err
 	}
@@ -296,6 +298,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
+		println("🍎installConstructor🍎")
 		spec := dagql.FieldSpec{
 			Name: gqlFieldName(mod.Name()),
 			// Description: "TODO", // XXX(vito)
