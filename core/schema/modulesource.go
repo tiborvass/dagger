@@ -2169,7 +2169,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	srcInstContentHashed := src.WithDigest(digest.Digest(src.Self.Digest))
 
 	modName := src.Self.ModuleName
-	println("🍎🍎🍎🍎🍎🍎🍎", modName)
+	println("🍎🍎🍎🍎🍎🍎🍎", modName, src.Self.SDK)
 
 	if src.Self.SDK == nil || src.Self.SDK.Source == "" {
 		obj := &core.ModuleObject{
