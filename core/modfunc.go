@@ -383,6 +383,18 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
 
+	/*
+		returnType := &ModuleObjectType{
+			typeDef: core.NewObjectTypeDef("Module", ""),
+			mod:     mod,
+		}
+
+		&ModuleObject{
+			Module:  returnType.mod,
+			TypeDef: returnType.typeDef,
+			Fields:  returnValue,
+		}
+	*/
 	returnValueTyped, err := fn.returnType.ConvertFromSDKResult(ctx, returnValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
