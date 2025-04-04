@@ -2148,8 +2148,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		NameField:    src.Self.ModuleName,
 		OriginalName: src.Self.ModuleOriginalName,
 
-		SDKConfig:  src.Self.SDK,
-		InstanceID: dagql.CurrentID(ctx),
+		SDKConfig: src.Self.SDK,
 	}
 
 	// load the deps as actual Modules
@@ -2268,6 +2267,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 			}
 		}
 	}
+
+	mod.InstanceID = dagql.CurrentID(ctx)
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, srcInstContentHashed, mod)
 	if err != nil {
