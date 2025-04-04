@@ -2175,7 +2175,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		obj := &core.ModuleObject{
 			Module: mod,
 			TypeDef: &core.ObjectTypeDef{
-				Name: modName,
+				Name:         modName,
+				OriginalName: modName,
 			},
 		}
 		obj.Install(ctx, s.dag)
