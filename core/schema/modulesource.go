@@ -2184,6 +2184,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 				Valid: true,
 			},
 		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to add object to module %q: %w", modName, err)
+		}
 	} else {
 		// get the runtime container, which is what is exec'd when calling functions in the module
 		mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
