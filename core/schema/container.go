@@ -84,12 +84,12 @@ func (s *containerSchema) Install() {
 			),
 
 		dagql.Func("rootfs", s.rootfs).
-			Doc(`Return a snapshot of the container's root filesystem. The snapshot can be modified then written back using "withRootfs". Use that method for filesystem modifications.`),
+			Doc(`Returns a snapshot of the container's root filesystem. The snapshot can be modified then written back using "withRootfs". Use that method for filesystem modifications.`),
 		dagql.Func("withRootfs", s.withRootfs).
-			Doc(`Change the container's root filesystem. The previous root filesystem will be lost.`).
+			Doc(`Changes the container's root filesystem. The previous root filesystem will be lost.`).
 			ArgDoc("directory", "The new root filesystem."),
 		dagql.Func("directory", s.directory).
-			Doc(`Retrieve a directory from the container's root filesystem`,
+			Doc(`Retrieves a directory from the container's root filesystem`,
 				`Mounts are included.`).
 			ArgDoc("path", `The path of the directory to retrieve (e.g., "./src").`).
 			ArgDoc("expand",
@@ -180,10 +180,10 @@ func (s *containerSchema) Install() {
 			ArgDoc("name", `The name of the label to remove (e.g., "org.opencontainers.artifact.created").`),
 
 		dagql.Func("entrypoint", s.entrypoint).
-			Doc(`Return the container's OCI entrypoint.`),
+			Doc(`Returns the container's OCI entrypoint.`),
 
 		dagql.Func("withEntrypoint", s.withEntrypoint).
-			Doc(`Set an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, "withExec" ignores the entrypoint by default.`).
+			Doc(`Sets an OCI-style entrypoint. It will be included in the container's OCI configuration. Note, "withExec" ignores the entrypoint by default.`).
 			ArgDoc("args", `Arguments of the entrypoint. Example: ["go", "run"].`).
 			ArgDoc("keepDefaultArgs", `Don't reset the default arguments when setting the entrypoint. By default it is reset, since entrypoint and default args are often tightly coupled.`),
 
@@ -192,7 +192,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("keepDefaultArgs", `Don't remove the default arguments when unsetting the entrypoint.`),
 
 		dagql.Func("defaultArgs", s.defaultArgs).
-			Doc(`Return the container's default arguments.`),
+			Doc(`Returns the container's default arguments.`),
 
 		dagql.Func("withDefaultArgs", s.withDefaultArgs).
 			Doc(`Configures default arguments for future commands. Like CMD in Dockerfile.`).
@@ -314,7 +314,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withoutFiles", s.withoutFiles).
-			Doc(`Return a new container spanshot with specified files removed`).
+			Doc(`Returns a new container spanshot with specified files removed`).
 			ArgDoc("paths", `Paths of the files to remove. Example: ["foo.txt, "/root/.ssh/config"`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of paths according to the current `+
@@ -335,7 +335,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withNewFile", s.withNewFile).
 			View(AllVersion).
-			Doc(`Return a new container snapshot, with a file added to its filesystem`).
+			Doc(`Returns a new container snapshot, with a file added to its filesystem`).
 			ArgDoc("path", `Path of the new file. May be relative or absolute. Example: "README.md" or "/etc/profile"`).
 			ArgDoc("contents", `Contents of the new file. Example: "Hello world!"`).
 			ArgDoc("permissions", `Permissions of the new file. Example: 0600`).
@@ -358,7 +358,7 @@ func (s *containerSchema) Install() {
 				`If the group is omitted, it defaults to the same as the user.`),
 
 		dagql.Func("withDirectory", s.withDirectory).
-			Doc(`Return a new container snapshot, with a directory added to its filesystem`).
+			Doc(`Returns a new container snapshot, with a directory added to its filesystem`).
 			ArgDoc("path", `Location of the written directory (e.g., "/tmp/directory").`).
 			ArgDoc("directory", `Identifier of the directory to write`).
 			ArgDoc("exclude", `Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).`).
@@ -372,7 +372,7 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutDirectory", s.withoutDirectory).
-			Doc(`Return a new container snapshot, with a directory removed from its filesystem`).
+			Doc(`Returns a new container snapshot, with a directory removed from its filesystem`).
 			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
@@ -503,7 +503,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("publish", s.publish).
 			DoNotCache("side effect on an external system (OCI registry)").
-			Doc(`Package the container state as an OCI image, and publish it to a registry`,
+			Doc(`Packages the container state as an OCI image, and publish it to a registry`,
 				`Returns the fully qualified address of the published image, with digest`).
 			ArgDoc("address",
 				`The OCI address to publish to`,
@@ -559,7 +559,7 @@ func (s *containerSchema) Install() {
 			Extend(),
 
 		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, s.asTarballPath)).
-			Doc(`Package the container state as an OCI image, and return it as a tar archive`).
+			Doc(`Packages the container state as an OCI image, and return it as a tar archive`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
 				`Used for multi-platform images.`).
