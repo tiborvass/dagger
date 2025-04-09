@@ -3937,6 +3937,8 @@ class Env(Type):
         name: str,
         value: CacheVolume,
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type CacheVolume in the environment
 
@@ -3948,11 +3950,15 @@ class Env(Type):
             The CacheVolume value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withCacheVolumeInput", _args)
         return Env(_ctx)
@@ -3979,6 +3985,8 @@ class Env(Type):
         name: str,
         value: Container,
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Container in the environment
 
@@ -3990,11 +3998,15 @@ class Env(Type):
             The Container value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withContainerInput", _args)
         return Env(_ctx)
@@ -4021,6 +4033,8 @@ class Env(Type):
         name: str,
         value: Directory,
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Directory in the environment
 
@@ -4032,11 +4046,15 @@ class Env(Type):
             The Directory value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withDirectoryInput", _args)
         return Env(_ctx)
@@ -4063,6 +4081,8 @@ class Env(Type):
         name: str,
         value: Self,
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Env in the environment
 
@@ -4074,11 +4094,15 @@ class Env(Type):
             The Env value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withEnvInput", _args)
         return Env(_ctx)
@@ -4105,6 +4129,8 @@ class Env(Type):
         name: str,
         value: "File",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type File in the environment
 
@@ -4116,11 +4142,15 @@ class Env(Type):
             The File value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withFileInput", _args)
         return Env(_ctx)
@@ -4147,6 +4177,8 @@ class Env(Type):
         name: str,
         value: "GitRef",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type GitRef in the environment
 
@@ -4158,11 +4190,15 @@ class Env(Type):
             The GitRef value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withGitRefInput", _args)
         return Env(_ctx)
@@ -4189,6 +4225,8 @@ class Env(Type):
         name: str,
         value: "GitRepository",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type GitRepository in the environment
 
@@ -4200,11 +4238,15 @@ class Env(Type):
             The GitRepository value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withGitRepositoryInput", _args)
         return Env(_ctx)
@@ -4232,6 +4274,8 @@ class Env(Type):
         name: str,
         value: "LLM",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type LLM in the environment
 
@@ -4243,11 +4287,15 @@ class Env(Type):
             The LLM value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withLLMInput", _args)
         return Env(_ctx)
@@ -4274,6 +4322,8 @@ class Env(Type):
         name: str,
         value: "ModuleConfigClient",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type ModuleConfigClient in the
         environment
@@ -4286,11 +4336,15 @@ class Env(Type):
             The ModuleConfigClient value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withModuleConfigClientInput", _args)
         return Env(_ctx)
@@ -4318,6 +4372,8 @@ class Env(Type):
         name: str,
         value: "Module",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Module in the environment
 
@@ -4329,11 +4385,15 @@ class Env(Type):
             The Module value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withModuleInput", _args)
         return Env(_ctx)
@@ -4360,6 +4420,8 @@ class Env(Type):
         name: str,
         value: "ModuleSource",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type ModuleSource in the environment
 
@@ -4371,11 +4433,15 @@ class Env(Type):
             The ModuleSource value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withModuleSourceInput", _args)
         return Env(_ctx)
@@ -4403,6 +4469,8 @@ class Env(Type):
         name: str,
         value: "Secret",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Secret in the environment
 
@@ -4414,11 +4482,15 @@ class Env(Type):
             The Secret value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withSecretInput", _args)
         return Env(_ctx)
@@ -4445,6 +4517,8 @@ class Env(Type):
         name: str,
         value: "Service",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Service in the environment
 
@@ -4456,11 +4530,15 @@ class Env(Type):
             The Service value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withServiceInput", _args)
         return Env(_ctx)
@@ -4487,6 +4565,8 @@ class Env(Type):
         name: str,
         value: "Socket",
         description: str,
+        *,
+        select: bool = False,
     ) -> Self:
         """Create or update a binding of type Socket in the environment
 
@@ -4498,11 +4578,15 @@ class Env(Type):
             The Socket value to assign to the binding
         description:
             The purpose of the input
+        select:
+            Select this input to scope the available tools to this input's
+            functions. More recent select inputs will override.
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("description", description),
+            Arg("select", select, False),
         ]
         _ctx = self._select("withSocketInput", _args)
         return Env(_ctx)

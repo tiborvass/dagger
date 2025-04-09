@@ -850,6 +850,104 @@ export type EnumTypeDefID = string & { __EnumTypeDefID: never }
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
+export type EnvWithCacheVolumeInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithContainerInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithDirectoryInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithEnvInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithFileInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithGitRefInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithGitRepositoryInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithLlminputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithModuleConfigClientInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithModuleInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithModuleSourceInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithSecretInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithServiceInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
+export type EnvWithSocketInputOpts = {
+  /**
+   * Select this input to scope the available tools to this input's functions. More recent select inputs will override.
+   */
+  select: boolean
+}
+
 /**
  * The `EnvID` scalar type represents an identifier for an object of type Env.
  */
@@ -3949,16 +4047,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The CacheVolume value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withCacheVolumeInput = (
     name: string,
     value: CacheVolume,
     description: string,
+    opts?: EnvWithCacheVolumeInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withCacheVolumeInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -3978,16 +4079,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Container value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withContainerInput = (
     name: string,
     value: Container,
     description: string,
+    opts?: EnvWithContainerInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withContainerInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4007,16 +4111,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Directory value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withDirectoryInput = (
     name: string,
     value: Directory,
     description: string,
+    opts?: EnvWithDirectoryInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withDirectoryInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4036,9 +4143,20 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Env value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
-  withEnvInput = (name: string, value: Env, description: string): Env => {
-    const ctx = this._ctx.select("withEnvInput", { name, value, description })
+  withEnvInput = (
+    name: string,
+    value: Env,
+    description: string,
+    opts?: EnvWithEnvInputOpts,
+  ): Env => {
+    const ctx = this._ctx.select("withEnvInput", {
+      name,
+      value,
+      description,
+      ...opts,
+    })
     return new Env(ctx)
   }
 
@@ -4057,9 +4175,20 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The File value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
-  withFileInput = (name: string, value: File, description: string): Env => {
-    const ctx = this._ctx.select("withFileInput", { name, value, description })
+  withFileInput = (
+    name: string,
+    value: File,
+    description: string,
+    opts?: EnvWithFileInputOpts,
+  ): Env => {
+    const ctx = this._ctx.select("withFileInput", {
+      name,
+      value,
+      description,
+      ...opts,
+    })
     return new Env(ctx)
   }
 
@@ -4078,12 +4207,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The GitRef value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
-  withGitRefInput = (name: string, value: GitRef, description: string): Env => {
+  withGitRefInput = (
+    name: string,
+    value: GitRef,
+    description: string,
+    opts?: EnvWithGitRefInputOpts,
+  ): Env => {
     const ctx = this._ctx.select("withGitRefInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4103,16 +4239,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The GitRepository value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withGitRepositoryInput = (
     name: string,
     value: GitRepository,
     description: string,
+    opts?: EnvWithGitRepositoryInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withGitRepositoryInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4135,9 +4274,20 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The LLM value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
-  withLLMInput = (name: string, value: LLM, description: string): Env => {
-    const ctx = this._ctx.select("withLLMInput", { name, value, description })
+  withLLMInput = (
+    name: string,
+    value: LLM,
+    description: string,
+    opts?: EnvWithLlminputOpts,
+  ): Env => {
+    const ctx = this._ctx.select("withLLMInput", {
+      name,
+      value,
+      description,
+      ...opts,
+    })
     return new Env(ctx)
   }
 
@@ -4156,16 +4306,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The ModuleConfigClient value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withModuleConfigClientInput = (
     name: string,
     value: ModuleConfigClient,
     description: string,
+    opts?: EnvWithModuleConfigClientInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withModuleConfigClientInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4188,16 +4341,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Module value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withModuleInput = (
     name: string,
     value: Module_,
     description: string,
+    opts?: EnvWithModuleInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withModuleInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4217,16 +4373,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The ModuleSource value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withModuleSourceInput = (
     name: string,
     value: ModuleSource,
     description: string,
+    opts?: EnvWithModuleSourceInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withModuleSourceInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4249,12 +4408,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Secret value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
-  withSecretInput = (name: string, value: Secret, description: string): Env => {
+  withSecretInput = (
+    name: string,
+    value: Secret,
+    description: string,
+    opts?: EnvWithSecretInputOpts,
+  ): Env => {
     const ctx = this._ctx.select("withSecretInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4274,16 +4440,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Service value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
   withServiceInput = (
     name: string,
     value: Service,
     description: string,
+    opts?: EnvWithServiceInputOpts,
   ): Env => {
     const ctx = this._ctx.select("withServiceInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
@@ -4303,12 +4472,19 @@ export class Env extends BaseClient {
    * @param name The name of the binding
    * @param value The Socket value to assign to the binding
    * @param description The purpose of the input
+   * @param opts.select Select this input to scope the available tools to this input's functions. More recent select inputs will override.
    */
-  withSocketInput = (name: string, value: Socket, description: string): Env => {
+  withSocketInput = (
+    name: string,
+    value: Socket,
+    description: string,
+    opts?: EnvWithSocketInputOpts,
+  ): Env => {
     const ctx = this._ctx.select("withSocketInput", {
       name,
       value,
       description,
+      ...opts,
     })
     return new Env(ctx)
   }
