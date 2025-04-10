@@ -843,6 +843,7 @@ func (c *Client) OpenPipe(
 	ctx context.Context,
 ) (io.ReadWriteCloser, error) {
 	caller, err := c.GetMainClientCaller()
+	println("🍎", caller.Conn().CanonicalTarget(), "🍎", caller.SharedKey())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
