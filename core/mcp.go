@@ -699,7 +699,7 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 	}
 
 	return LLMTool{
-		Name:        "returnToUser",
+		Name:        "complete",
 		Description: desc,
 		Schema: map[string]any{
 			"type":                 "object",
