@@ -259,7 +259,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 
 	// Process the accumulated content into a generic LLMResponse.
 	var content string
-	var toolCalls []ToolCall
+	var toolCalls []LLMToolCall
 	for _, block := range acc.Content {
 		switch b := block.AsUnion().(type) {
 		case anthropic.TextBlock:
@@ -273,7 +273,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 				}
 			}
 			// Map tool-use blocks to our generic tool call structure.
-			toolCalls = append(toolCalls, ToolCall{
+			toolCalls = append(toolCalls, LLMToolCall{
 				ID: b.ID,
 				Function: FuncCall{
 					Name:      b.Name,
