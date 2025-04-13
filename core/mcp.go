@@ -378,13 +378,14 @@ func (m *MCP) call(ctx context.Context,
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
 	args any,
-) (_ any, rerr error) {
+) (res string, rerr error) {
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
 		fmt.Sprintf("%s%s", fieldDef.Name, displayArgs(args)),
 		telemetry.ActorEmoji("🤖"),
 		// telemetry.Passthrough(),
 		telemetry.Reveal())
+
 	defer telemetry.End(span, func() error {
 		if rerr != nil && !validated {
 			// only reveal for "plumbing" errors, not errors from the field, since
@@ -394,11 +395,17 @@ func (m *MCP) call(ctx context.Context,
 		return rerr
 	})
 
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer func() {
+		fmt.Fprintln(stdio.Stdout, res)
+		stdio.Close()
+	}()
+
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	//
 	argsMap, ok := args.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("expected arguments to be a map - got %#v", args)
+		return "", fmt.Errorf("expected arguments to be a map - got %#v", args)
 	}
 	var target dagql.Object
 	if selfType == "Query" && m.env.Root() != nil {
@@ -411,22 +418,22 @@ func (m *MCP) call(ctx context.Context,
 		}
 		recv, ok := self.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected %q to be a string - got %#v", selfType, recv)
+			return "", fmt.Errorf("expected %q to be a string - got %#v", selfType, recv)
 		}
 		// don't pass 'self' along to future arg validation
 		delete(argsMap, selfType)
 		var err error
 		target, err = m.GetObject(recv, selfType)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		if target.ObjectType().TypeName() != selfType {
-			return nil, fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
+			return "", fmt.Errorf("expected %q to be a %q - got %q", selfType, selfType, target.ObjectType().TypeName())
 		}
 	}
 	fieldSel, err := m.toolCallToSelection(target, fieldDef, argsMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert call inputs: %w", err)
+		return "", fmt.Errorf("failed to convert call inputs: %w", err)
 	}
 	validated = true
 
@@ -441,7 +448,7 @@ func (m *MCP) selectionToToolResult(
 	target dagql.Object,
 	fieldDef *ast.FieldDefinition,
 	fieldSel dagql.Selector,
-) (any, error) {
+) (string, error) {
 	sels := []dagql.Selector{fieldSel}
 
 	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
@@ -459,7 +466,7 @@ func (m *MCP) selectionToToolResult(
 			//
 			var objs []dagql.Object
 			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
-				return nil, fmt.Errorf("failed to sync: %w", err)
+				return "", fmt.Errorf("failed to sync: %w", err)
 			}
 			var res []any
 			for _, obj := range objs {
@@ -474,7 +481,7 @@ func (m *MCP) selectionToToolResult(
 	// Make the DagQL call.
 	var val dagql.Typed
 	if err := srv.Select(ctx, target, &val, sels...); err != nil {
-		return nil, fmt.Errorf("failed to sync: %w", err)
+		return "", fmt.Errorf("failed to sync: %w", err)
 	}
 
 	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
@@ -483,7 +490,7 @@ func (m *MCP) selectionToToolResult(
 		//
 		syncedObj, err := srv.Load(ctx, id.ID())
 		if err != nil {
-			return nil, fmt.Errorf("failed to load synced object: %w", err)
+			return "", fmt.Errorf("failed to load synced object: %w", err)
 		}
 		val = syncedObj
 	}
