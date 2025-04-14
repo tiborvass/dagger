@@ -499,7 +499,7 @@ func (m *MCP) toolCallToSelection(
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
+			return sel, fmt.Errorf("decode arg %q:%q (%T): %w", arg.Name, val, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
