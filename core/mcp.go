@@ -57,9 +57,11 @@ func newMCP(env *Env, endpoint *LLMEndpoint) *MCP {
 
 	// Set initial selection if available, otherwise use root
 	if env.selection != nil {
-		m.Select(env.selection)
+		m.selectedTools[env.selection.ObjectType().TypeName()] = true
+		//m.Select(env.selection)
 	} else if env.Root() != nil {
-		m.Select(env.Root())
+		panic("not implemented")
+		// m.Select(env.Root())
 	}
 
 	if endpoint != nil {
@@ -631,27 +633,6 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 }
 
-func (m *MCP) unselectBuiltin() LLMTool {
-	return LLMTool{
-		Name:        "unselect",
-		Description: "clear the current object selection to gain access the top level tools.",
-		Schema: map[string]any{
-			"type":                 "object",
-			"properties":           map[string]any{},
-			"strict":               true,
-			"additionalProperties": false,
-		},
-		Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
-			if m.env.Root() == nil {
-				return nil, fmt.Errorf("no root object available")
-			}
-			prev := m.Current()
-			m.Select(m.env.Root())
-			return m.currentState(prev)
-		}),
-	}
-}
-
 func (m *MCP) returnBuiltin() LLMTool {
 	props := map[string]any{}
 	required := []string{}
@@ -792,8 +773,6 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			},
 		},
 	}
-
-	builtins = append(builtins, m.unselectBuiltin())
 
 	// for _, typeName := range m.env.Types() {
 	// 	tools, err := m.tools(srv, typeName)
