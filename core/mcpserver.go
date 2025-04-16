@@ -61,11 +61,15 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 
 		var defaultVal *string
 		if v, ok := argSchema["default"]; ok {
-			defVal, ok := v.(string)
-			if !ok {
-				return nil, fmt.Errorf("only \"string\" is currently supported for the default value of arg %q of tool %q, got %T", argName, tool.Name, v)
+			switch defVal := v.(type) {
+			case string:
+				defaultVal = &defVal
+			case bool:
+				s := fmt.Sprintf("%t", defVal)
+				defaultVal = &s
+			default:
+				return nil, fmt.Errorf("only \"string\" and \"bool\" are currently supported for the default value of arg %q of tool %q, got %T", argName, tool.Name, v)
 			}
-			defaultVal = &defVal
 		}
 		if slices.Contains(required, argName) {
 			propOpts = append(propOpts, mcp.Required())
