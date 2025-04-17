@@ -877,7 +877,8 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 						// already have it
 						continue
 					}
-					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
+					firstParagraph := strings.Split(tool.Description, "\n\n")[0]
+					desc += "\n- " + tool.Name + " (returns " + tool.Returns + "): " + strings.ReplaceAll(firstParagraph, "\n", " ")
 				}
 				var objects []string
 				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
