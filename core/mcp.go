@@ -773,6 +773,10 @@ func (m *MCP) returnBuiltin() (LLMTool, bool) {
 }
 
 func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
+	toolsMap := map[string]LLMTool{}
+	for _, tool := range tools {
+		toolsMap[tool.Name] = tool
+	}
 	builtins := []LLMTool{
 		{
 			Name:        "think",
@@ -904,6 +908,9 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 			}) (any, error) {
 				toolCounts := make(map[string]int)
 				for _, tool := range args.Tools {
+					if _, ok := toolsMap[tool]; !ok {
+						return "", fmt.Errorf("tool %s is not available to be selected, please read the description of selectTools again", tool)
+					}
 					toolCounts[tool]++
 				}
 				// perform a sanity check; some LLMs will do silly things like request
