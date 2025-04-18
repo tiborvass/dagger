@@ -79,6 +79,14 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 			return fmt.Errorf("error instantiating module: %w", err)
 		}
 
+		// TODO: in mcpserver.go this should be overwritten to whatever the MCP client sends us as an MCP Root.
+		path := "."
+		var workdirID string
+		q = q.Root().Select("host").Select("directory").Arg("path", path).Select("id")
+		if err := makeRequest(ctx, q, &workdirID); err != nil {
+			return fmt.Errorf("error making workdir: %w", err)
+		}
+
 		q = q.Root().Select("env")
 
 		extraCore := ""
@@ -91,6 +99,10 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 			Arg("name", modName).
 			Arg("value", modID).
 			Arg("description", modDef.MainObject.Description()).
+			Select("withDirectoryInput").
+			Arg("name", "workdir").
+			Arg("value", workdirID).
+			Arg("description", "working directory, often the root of a project").
 			Select("id")
 
 		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
