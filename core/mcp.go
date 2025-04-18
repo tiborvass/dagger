@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -478,10 +479,12 @@ func (m *MCP) toolCallToSelection(
 		if !ok {
 			continue
 		}
+		fmt.Fprintf(os.Stderr, "🍎: %#v\n", arg)
 		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
 			if idStr, ok := val.(string); ok {
 				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
 				envVal, err := m.GetObject(idStr, idType)
+				fmt.Fprintln(os.Stderr, "🍎🍎", idStr, "🍎", idType, "🍎", envVal, "🍎", err)
 				if err != nil {
 					return sel, err
 				}
