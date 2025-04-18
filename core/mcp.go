@@ -479,11 +479,13 @@ func (m *MCP) toolCallToSelection(
 		if !ok {
 			continue
 		}
+		// 🍎: dagql.InputSpec{Name:"directory", Description:"Identifier of the directory to write", Type:dagql.ID[*github.com/dagger/dagger/core.Directory]{id:(*call.ID)(nil), inner:(*core.Directory)(nil)}, Default:dagql.Input(nil), DeprecatedReason:"", ExperimentalReason:"", Sensitive:false, Directives:[]*ast.Directive(nil)}
 		fmt.Fprintf(os.Stderr, "🍎: %#v\n", arg)
 		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
 			if idStr, ok := val.(string); ok {
 				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
 				envVal, err := m.GetObject(idStr, idType)
+				// 🍎🍎 Directory#1 🍎 Directory 🍎 Directory@sha256:52e77ed19aed46b966589ae84d0005ee0c8a2ac652e8db963f18e484654068f8 🍎 <nil>
 				fmt.Fprintln(os.Stderr, "🍎🍎", idStr, "🍎", idType, "🍎", envVal, "🍎", err)
 				if err != nil {
 					return sel, err
