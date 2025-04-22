@@ -34,8 +34,8 @@ type LLMTool struct {
 	Description string `json:"description"`
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
 	Schema map[string]any `json:"schema"`
-	// Return type, used to hint to the model in tool lists - not exposed through
-	// this field, since there's no such thing (I wish!)
+	// Return type, used to hint to the model in tool lists
+	// Only indirectly exposed in the static API. See staticBuiltins.
 	Returns string `json:"-"`
 	// Function implementing the tool.
 	Call func(context.Context, any) (any, error) `json:"-"`
@@ -51,20 +51,30 @@ type MCP struct {
 	lastResult dagql.Typed
 	// Indicates that the model has returned
 	returned bool
+	// Whether to use the static API
+	static bool
 }
 
 func newMCP(env *Env) *MCP {
 	return &MCP{
 		env:           env,
 		selectedTools: map[string]bool{},
+		// TODO: parameterize
+		static: true,
 	}
 }
 
-//go:embed llm_dagger_prompt.md
-var defaultSystemPrompt string
+//go:embed llm_dagger_dynamic_api_prompt.md
+var defaultSystemPromptDynamicAPI string
+
+//go:embed llm_dagger_static_api_prompt.md
+var defaultSystemPromptStaticAPI string
 
 func (m *MCP) DefaultSystemPrompt() string {
-	return defaultSystemPrompt
+	if m.static {
+		return defaultSystemPromptStaticAPI
+	}
+	return defaultSystemPromptDynamicAPI
 }
 
 func (m *MCP) Clone() *MCP {
@@ -863,88 +873,11 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 	}
 
 	if len(tools) > 0 {
-		builtins = append(builtins, LLMTool{
-			Name: "select_tools",
-			Description: (func() string {
-				desc := `Select tools for interacting with the available objects.`
-				desc += "\n\nAvailable tools:"
-				for _, tool := range tools {
-					if m.selectedTools[tool.Name] {
-						// already have it
-						continue
-					}
-					desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
-				}
-				var objects []string
-				for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
-					count := m.env.typeCounts[typeName]
-					for i := 1; i <= count; i++ {
-						bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
-						objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
-					}
-				}
-				if len(objects) > 0 {
-					desc += "\n\nAvailable objects:"
-					for _, input := range objects {
-						desc += fmt.Sprintf("\n- %s", input)
-					}
-				}
-				return desc
-			})(),
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"tools": map[string]any{
-						"type":        "array",
-						"items":       map[string]any{"type": "string"},
-						"description": "The tools to select.",
-					},
-				},
-				"required": []string{"tools"},
-			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
-				Tools []string `json:"tools"`
-			}) (any, error) {
-				toolCounts := make(map[string]int)
-				for _, tool := range args.Tools {
-					toolCounts[tool]++
-				}
-				// perform a sanity check; some LLMs will do silly things like request
-				// the same tool 3 times when told to call it 3 times
-				for tool, count := range toolCounts {
-					if count > 1 {
-						return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
-					}
-				}
-				var selectedTools []LLMTool
-				var unknownTools []string
-				for tool := range toolCounts {
-					var foundTool LLMTool
-					for _, t := range tools {
-						if t.Name == tool {
-							foundTool = t
-							break
-						}
-					}
-					if foundTool.Name == "" {
-						unknownTools = append(unknownTools, tool)
-					} else {
-						m.selectedTools[tool] = true
-						selectedTools = append(selectedTools, foundTool)
-					}
-				}
-				sort.Slice(selectedTools, func(i, j int) bool {
-					return selectedTools[i].Name < selectedTools[j].Name
-				})
-				res := map[string]any{
-					"added_tools": selectedTools,
-				}
-				if len(unknownTools) > 0 {
-					res["unknown_tools"] = unknownTools
-				}
-				return toolStructuredResponse(res)
-			}),
-		})
+		if m.static {
+			builtins = append(builtins, m.staticBuiltins(tools)...)
+		} else {
+			builtins = append(builtins, m.selectToolsBuiltin(tools))
+		}
 	}
 
 	if returnTool, ok := m.returnBuiltin(); ok {
@@ -1000,6 +933,204 @@ func (m *MCP) Builtins(srv *dagql.Server, tools []LLMTool) ([]LLMTool, error) {
 		}
 	}
 	return builtins, nil
+}
+
+func (m *MCP) staticBuiltins(tools []LLMTool) []LLMTool {
+	return []LLMTool{
+		{
+			Name:        "list_functions",
+			Description: "List available functions.",
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
+				type tool struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+					// TODO: maybe unnecessary?
+					Returns string `json:"returns"`
+				}
+				resp := make([]tool, len(tools))
+				for i, t := range tools {
+					resp[i] = tool{t.Name, t.Description, t.Returns}
+				}
+				return toolStructuredResponse(resp)
+			}),
+		},
+		{
+			Name:        "functions_arguments_schema",
+			Description: "Get the JSON schemas of one or multiple functions' arguments.",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"functions": map[string]any{
+						"type":        "array",
+						"items":       map[string]any{"type": "string"},
+						"description": "Names of the functions whose arguments to describe in JSON schema",
+					},
+				},
+				"required": []string{"functions"},
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				Functions []string
+			}) (any, error) {
+				type schema struct {
+					Name   string         `json:"name"`
+					Schema map[string]any `json:"schema"`
+				}
+				resp := make([]schema, len(args.Functions))
+				for i, f := range args.Functions {
+					for _, t := range tools {
+						if t.Name == f {
+							resp[i] = schema{t.Name, t.Schema}
+							break
+						}
+					}
+				}
+				return toolStructuredResponse(resp)
+			}),
+		},
+		{
+			Name:        "call_function",
+			Description: "Call a named function after having checked its arguments schema using the functions_arguments_schema tool.",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Name of the function to call",
+					},
+					"arguments": map[string]any{
+						"type":        "object",
+						"description": "The arguments to pass to the function",
+					},
+				},
+				"required": []string{"name"},
+			},
+			Call: func(ctx context.Context, args any) (res any, err error) {
+				var s struct {
+					Name      string
+					Arguments map[string]any
+				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							err = fmt.Errorf("invalid arguments for %T: %v", args, r)
+						}
+					}()
+					m := args.(map[string]any)
+					s.Name = m["name"].(string)
+					s.Arguments = m["arguments"].(map[string]any)
+					if s.Arguments == nil {
+						s.Arguments = map[string]any{}
+					}
+				}()
+				name := s.Name
+				var tool LLMTool
+				for _, t := range tools {
+					if t.Name == name {
+						tool = t
+						break
+					}
+				}
+				if tool.Name == "" {
+					return nil, fmt.Errorf("function %q does not exist. Call list_functions to see the available ones.", name)
+				}
+				// TODO: differentiate user module's error from dagger error for better error message
+				res, err = tool.Call(ctx, s.Arguments)
+				if err != nil {
+					return nil, fmt.Errorf("function %q called with %v resulted in error: %w", name, s.Arguments, err)
+				}
+				return res, nil
+			},
+		},
+	}
+}
+
+func (m *MCP) selectToolsBuiltin(tools []LLMTool) LLMTool {
+	return LLMTool{
+		Name: "select_tools",
+		Description: (func() string {
+			desc := `Select tools for interacting with the available objects.`
+			desc += "\n\nAvailable tools:"
+			for _, tool := range tools {
+				if m.selectedTools[tool.Name] {
+					// already have it
+					continue
+				}
+				desc += "\n- " + tool.Name + " (returns " + tool.Returns + ")"
+			}
+			var objects []string
+			for _, typeName := range slices.Sorted(maps.Keys(m.env.typeCounts)) {
+				count := m.env.typeCounts[typeName]
+				for i := 1; i <= count; i++ {
+					bnd := m.env.objsByID[fmt.Sprintf("%s#%d", typeName, i)]
+					objects = append(objects, fmt.Sprintf("%s: %s", bnd.ID(), bnd.Description))
+				}
+			}
+			if len(objects) > 0 {
+				desc += "\n\nAvailable objects:"
+				for _, input := range objects {
+					desc += fmt.Sprintf("\n- %s", input)
+				}
+			}
+			return desc
+		})(),
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"tools": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "The tools to select.",
+				},
+			},
+			"required": []string{"tools"},
+		},
+		Call: ToolFunc(func(ctx context.Context, args struct {
+			Tools []string `json:"tools"`
+		}) (any, error) {
+			toolCounts := make(map[string]int)
+			for _, tool := range args.Tools {
+				toolCounts[tool]++
+			}
+			// perform a sanity check; some LLMs will do silly things like request
+			// the same tool 3 times when told to call it 3 times
+			for tool, count := range toolCounts {
+				if count > 1 {
+					return "", fmt.Errorf("tool %s selected more than once (%d times)", tool, count)
+				}
+			}
+			var selectedTools []LLMTool
+			var unknownTools []string
+			for tool := range toolCounts {
+				var foundTool LLMTool
+				for _, t := range tools {
+					if t.Name == tool {
+						foundTool = t
+						break
+					}
+				}
+				if foundTool.Name == "" {
+					unknownTools = append(unknownTools, tool)
+				} else {
+					m.selectedTools[tool] = true
+					selectedTools = append(selectedTools, foundTool)
+				}
+			}
+			sort.Slice(selectedTools, func(i, j int) bool {
+				return selectedTools[i].Name < selectedTools[j].Name
+			})
+			res := map[string]any{
+				"added_tools": selectedTools,
+			}
+			if len(unknownTools) > 0 {
+				res["unknown_tools"] = unknownTools
+			}
+			return toolStructuredResponse(res)
+		}),
+	}
 }
 
 func (m *MCP) userProvidedValues() []LLMTool {

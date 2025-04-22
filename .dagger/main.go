@@ -160,7 +160,7 @@ func (dev *DaggerDev) Test() *Test {
 // 	ctx context.Context,
 // 	// +defaultPath=./core/llm_docs.md
 // 	docs *dagger.File,
-// 	// +defaultPath=./core/llm_dagger_prompt.md
+// 	// +defaultPath=./core/llm_dagger_dynamic_api_prompt.md
 // 	systemPrompt *dagger.File,
 // ) error {
 // 	return dag.Evaluator(dagger.EvaluatorOpts{
@@ -173,7 +173,7 @@ func (dev *DaggerDev) Test() *Test {
 // 	ctx context.Context,
 // 	// +defaultPath=./core/llm_docs.md
 // 	docs *dagger.File,
-// 	// +defaultPath=./core/llm_dagger_prompt.md
+// 	// +defaultPath=./core/llm_dagger_dynamic_api_prompt.md
 // 	systemPrompt *dagger.File,
 // ) (string, error) {
 // 	return dag.Evaluator(dagger.EvaluatorOpts{
