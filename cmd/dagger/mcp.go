@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
+	"strings"
 
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -43,12 +47,35 @@ var mcpCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
+		stopGapKillMCP()
 		return withEngine(ctx, client.Params{}, mcpStart)
 	},
 	Hidden: true,
 	Annotations: map[string]string{
 		"experimental": "true",
 	},
+}
+
+func stopGapKillMCP() {
+	output, err := exec.Command("ps", "aux").Output()
+	if err != nil {
+		panic(err)
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "dagger mcp") {
+			fields := strings.Fields(line)
+			if len(fields) > 1 {
+				pid := fields[1]
+				if p, err := strconv.Atoi(pid); err == nil {
+					if proc, err := os.FindProcess(p); err == nil {
+						proc.Kill()
+					}
+				}
+			}
+		}
+	}
 }
 
 // dagger -m github.com/org/repo mcp
