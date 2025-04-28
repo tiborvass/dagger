@@ -128,7 +128,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		// establish new client ID for the nested client
-		if execMD.ClientID == "" {
+		if false && execMD.ClientID == "" {
 			execMD.ClientID = identity.NewID()
 		}
 

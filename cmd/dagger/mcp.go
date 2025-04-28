@@ -43,7 +43,10 @@ var mcpCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		cmd.SetContext(idtui.WithPrintTraceLink(ctx, true))
-		return withEngine(ctx, client.Params{}, mcpStart)
+		return withEngine(ctx, client.Params{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+		}, mcpStart)
 	},
 	Hidden: true,
 	Annotations: map[string]string{
