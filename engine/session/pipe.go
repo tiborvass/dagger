@@ -5,6 +5,7 @@ import (
 	"errors"
 	fmt "fmt"
 	io "io"
+	"os"
 
 	"github.com/dagger/dagger/engine/session/ctxio"
 	"github.com/moby/buildkit/util/grpcerrors"
@@ -22,11 +23,29 @@ type PipeAttachable struct {
 	UnimplementedPipeServer
 }
 
+type debugIO struct {
+	io.Reader
+	io.Writer
+}
+
+func (d debugIO) Write(p []byte) (int, error) {
+	fmt.Fprintln(os.Stderr, "+🐞debugIO✍️", string(p))
+	defer fmt.Fprintln(os.Stderr, "-🐞debugIO✍️")
+	return d.Writer.Write(p)
+}
+
+func (d debugIO) Read(p []byte) (int, error) {
+	fmt.Fprintln(os.Stderr, "+🐞debugIO📖", string(p))
+	defer fmt.Fprintln(os.Stderr, "-🐞debugIO📖")
+	return d.Reader.Read(p)
+}
+
 func NewPipeAttachable(rootCtx context.Context, stdin io.Reader, stdout io.Writer) PipeAttachable {
+	d := debugIO{stdin, stdout}
 	return PipeAttachable{
 		rootCtx: rootCtx,
-		stdin:   stdin,
-		stdout:  stdout,
+		stdin:   d,
+		stdout:  d,
 	}
 }
 
@@ -52,6 +71,8 @@ type PipeIO struct {
 }
 
 func (pio *PipeIO) Write(p []byte) (n int, err error) {
+	fmt.Fprintln(os.Stderr, "+🐞PipeIO✍️", string(p))
+	defer fmt.Fprintln(os.Stderr, "-🐞PipeIO✍️")
 	err = pio.GRPC.Send(&Data{Data: p})
 	if err != nil {
 		return 0, fmt.Errorf("error writing dagger pipe: %w", err)
@@ -60,6 +81,8 @@ func (pio *PipeIO) Write(p []byte) (n int, err error) {
 }
 
 func (pio *PipeIO) Read(p []byte) (n int, err error) {
+	fmt.Fprintln(os.Stderr, "+🐞PipeIO📖", string(p))
+	defer fmt.Fprintln(os.Stderr, "-🐞PipeIO📖")
 	// read from the remainder buffer first
 	n = copy(p, pio.rem)
 	p = p[n:]
