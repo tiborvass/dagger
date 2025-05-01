@@ -6,6 +6,7 @@ import (
 	fmt "fmt"
 	io "io"
 	"os"
+	"runtime/debug"
 
 	"github.com/dagger/dagger/engine/session/ctxio"
 	"github.com/moby/buildkit/util/grpcerrors"
@@ -71,8 +72,8 @@ type PipeIO struct {
 }
 
 func (pio *PipeIO) Write(p []byte) (n int, err error) {
-	fmt.Fprintln(os.Stderr, "+🐞PipeIO✍️", string(p))
-	defer fmt.Fprintln(os.Stderr, "-🐞PipeIO✍️")
+	fmt.Fprintln(os.Stderr, "+🐞PipeIO✍️", string(p), string(debug.Stack()))
+	defer fmt.Fprintln(os.Stderr, "-🐞PipeIO✍️", string(debug.Stack()))
 	err = pio.GRPC.Send(&Data{Data: p})
 	if err != nil {
 		return 0, fmt.Errorf("error writing dagger pipe: %w", err)
@@ -81,8 +82,8 @@ func (pio *PipeIO) Write(p []byte) (n int, err error) {
 }
 
 func (pio *PipeIO) Read(p []byte) (n int, err error) {
-	fmt.Fprintln(os.Stderr, "+🐞PipeIO📖", string(p))
-	defer fmt.Fprintln(os.Stderr, "-🐞PipeIO📖")
+	fmt.Fprintln(os.Stderr, "+🐞PipeIO📖", string(p), string(debug.Stack()))
+	defer fmt.Fprintln(os.Stderr, "-🐞PipeIO📖", string(debug.Stack()))
 	// read from the remainder buffer first
 	n = copy(p, pio.rem)
 	p = p[n:]
