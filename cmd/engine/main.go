@@ -30,7 +30,6 @@ import (
 	"github.com/moby/buildkit/util/disk"
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/util/stack"
-	"github.com/moby/buildkit/version"
 	"github.com/moby/sys/reexec"
 	"github.com/moby/sys/userns"
 	sloglogrus "github.com/samber/slog-logrus/v2"
@@ -43,6 +42,7 @@ import (
 	"google.golang.org/grpc"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -52,7 +52,7 @@ import (
 
 func init() {
 	apicaps.ExportedProduct = "dagger-engine"
-	stack.SetVersionInfo(version.Version, version.Revision)
+	stack.SetVersionInfo(engine.Version, engine.Tag)
 
 	//nolint:staticcheck // SA1019 deprecated
 	seed.WithTimeAndRand()
@@ -239,11 +239,11 @@ func addFlags(app *cli.App) {
 
 func main() { //nolint:gocyclo
 	cli.VersionPrinter = func(c *cli.Context) {
-		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
+		fmt.Println(c.App.Name, "github.com/dagger/dagger/engine", c.App.Version, engine.Tag)
 	}
 	app := cli.NewApp()
 	app.Name = "dagger-engine"
-	app.Version = version.Version
+	app.Version = engine.Version
 
 	addFlags(app)
 
