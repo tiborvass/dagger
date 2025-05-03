@@ -431,15 +431,15 @@ func main() {
 	}
 	switch progress {
 	case "plain":
-		Frontend = idtui.NewPlain()
+		Frontend = idtui.NewPlain(stderr)
 	case "tty":
 		if !hasTTY {
 			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
 			os.Exit(1)
 		}
-		Frontend = idtui.NewPretty()
+		Frontend = idtui.NewPretty(stderr)
 	case "report":
-		Frontend = idtui.NewReporter()
+		Frontend = idtui.NewReporter(stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)

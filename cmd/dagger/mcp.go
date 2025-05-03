@@ -34,7 +34,7 @@ var mcpCmd = &cobra.Command{
 		if progress == "auto" && hasTTY {
 			fmt.Fprintln(stderr, "overriding 'auto' progress mode to 'plain' to avoid interference with mcp stdio")
 
-			Frontend = idtui.NewPlain()
+			Frontend = idtui.NewPlain(stderr)
 		}
 
 		return nil
