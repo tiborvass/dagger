@@ -172,16 +172,23 @@ func (env *Env) WithoutInput(key string) *Env {
 	return env
 }
 
-func (env *Env) Ingest(obj dagql.Object, desc string) string {
+func (env *Env) Ingest(obj dagql.Object, b *Binding) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
+	}
+	desc := ""
+	if b != nil {
+		desc = b.Description
 	}
 	hash := id.Digest()
 	typeName := id.Type().NamedType()
 	llmID, ok := env.idByHash[hash]
 	if !ok {
-		env.typeCounts[typeName]++
+		// make the workdir input opaque in order to prevent exposing unnecessarily Directory methods
+		if b != nil && b.Key != "workdir" {
+			env.typeCounts[typeName]++
+		}
 		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCounts[typeName])
 		if desc == "" {
 			desc = env.describe(obj.ID())
@@ -329,7 +336,7 @@ func (b *Binding) ID() string {
 	if !isObject {
 		return ""
 	}
-	return b.env.Ingest(obj, b.Description)
+	return b.env.Ingest(obj, b)
 }
 
 // Return a stable digest of the binding's value

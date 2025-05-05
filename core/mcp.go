@@ -473,7 +473,7 @@ func (m *MCP) selectionToToolResult(
 			}
 			var res []any
 			for _, obj := range objs {
-				res = append(res, m.env.Ingest(obj, ""))
+				res = append(res, m.env.Ingest(obj, nil))
 			}
 			return toolStructuredResponse(map[string]any{
 				"objects": res,
@@ -1277,7 +1277,7 @@ const jsonSchemaIDAttr = "x-id-type"
 
 func (m *MCP) newState(target dagql.Object) (string, error) {
 	return toolStructuredResponse(map[string]any{
-		"result": m.env.Ingest(target, ""),
+		"result": m.env.Ingest(target, nil),
 	})
 }
 
