@@ -392,8 +392,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
-				fmt.Fprintln(os.Stderr)
-				handleTelemetryErrorOutput(os.Stderr, out, fe.TelemetryError)
+				fmt.Fprintln(w)
+				handleTelemetryErrorOutput(w, out, fe.TelemetryError)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
@@ -410,7 +410,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	}
 
 	// Replay the primary output log to stdout/stderr.
-	return renderPrimaryOutput(fe.db)
+	return renderPrimaryOutput(w, fe.db)
 }
 
 func (fe *frontendPretty) flush() {

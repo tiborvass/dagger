@@ -415,7 +415,7 @@ func (fe *frontendPlain) finalRender() {
 	if fe.msgPreFinalRender.Len() > 0 {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
-	renderPrimaryOutput(fe.db)
+	renderPrimaryOutput(stderr, fe.db)
 }
 
 func (fe *frontendPlain) renderProgress() {
