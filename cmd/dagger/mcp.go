@@ -69,6 +69,15 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 
 	q := querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 	var logMsg string
+	var workdirID string
+
+	// TODO: in mcpserver.go this should be overwritten to whatever the MCP client sends us as an MCP Root.
+	path := "."
+	q = q.Root().Select("host").Select("directory").Arg("path", path).Select("id")
+	if err := makeRequest(ctx, q, &workdirID); err != nil {
+		return fmt.Errorf("error making workdir: %w", err)
+	}
+
 	if modDef != nil {
 		// TODO: parse user args and pass them to constructor
 		modName := modDef.MainObject.AsObject.Constructor.Name
@@ -77,14 +86,6 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		var modID string
 		if err := makeRequest(ctx, q, &modID); err != nil {
 			return fmt.Errorf("error instantiating module: %w", err)
-		}
-
-		// TODO: in mcpserver.go this should be overwritten to whatever the MCP client sends us as an MCP Root.
-		path := "."
-		var workdirID string
-		q = q.Root().Select("host").Select("directory").Arg("path", path).Select("id")
-		if err := makeRequest(ctx, q, &workdirID); err != nil {
-			return fmt.Errorf("error making workdir: %w", err)
 		}
 
 		q = q.Root().Select("env").
@@ -99,21 +100,22 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 		q = q.Select("with"+modDef.MainObject.AsObject.Name+"Input").
 			Arg("name", modName).
 			Arg("value", modID).
-			Arg("description", modDef.MainObject.Description()).
-			Select("withDirectoryInput").
-			Arg("name", "working_dir").
-			Arg("value", workdirID).
-			Arg("description", "input working directory, often the root of a project").
-			Select("withDirectoryOutput").
-			Arg("name", "result_dir").
-			Arg("description", "output result directory to be exported to the root of the project").
-			Select("id")
+			Arg("description", modDef.MainObject.Description())
 
 		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
 	} else {
-		q = q.Root().Select("env").Arg("privileged", envPrivileged).Select("id")
+		q = q.Root().Select("env").Arg("privileged", envPrivileged)
 		logMsg = "Exposing Dagger core as an MCP server"
 	}
+
+	q = q.Select("withDirectoryInput").
+		Arg("name", "working_dir").
+		Arg("value", workdirID).
+		Arg("description", "input working directory, often the root of a project").
+		Select("withDirectoryOutput").
+		Arg("name", "result_dir").
+		Arg("description", "output result directory to be exported to the root of the project").
+		Select("id")
 
 	var envID string
 	if err := makeRequest(ctx, q, &envID); err != nil {
