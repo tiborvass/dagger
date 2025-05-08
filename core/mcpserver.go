@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
+	"os"
 	"slices"
 	"strings"
 
@@ -120,6 +121,31 @@ func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 				return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
 			}
 			text = string(b)
+		}
+
+		if tool.Name == "save" {
+			var output string
+			var obj dagql.Object
+			b, ok := s.env.env.Output("result_dir")
+			if !ok {
+				fmt.Fprintln(os.Stderr, "MCP DEBUG: did not find result_dir output binding")
+				goto end
+			}
+			obj, ok = b.AsObject()
+			if !ok {
+				fmt.Fprintln(os.Stderr, "MCP DEBUG: result_dir is not an object")
+				goto end
+			}
+			s.dag.Select(ctx, obj, &output,
+				dagql.Selector{
+					Field: "export",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(".")},
+						{Name: "wipe", Value: dagql.Boolean(true)},
+					},
+				},
+			)
+		end:
 		}
 
 		if err := s.setTools(); err != nil {

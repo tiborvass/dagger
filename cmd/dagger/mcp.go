@@ -100,9 +100,12 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 			Arg("value", modID).
 			Arg("description", modDef.MainObject.Description()).
 			Select("withDirectoryInput").
-			Arg("name", "workdir").
+			Arg("name", "working_dir").
 			Arg("value", workdirID).
-			Arg("description", "working directory, often the root of a project").
+			Arg("description", "input working directory, often the root of a project").
+			Select("withDirectoryOutput").
+			Arg("name", "result_dir").
+			Arg("description", "output result directory to be exported to the root of the project").
 			Select("id")
 
 		logMsg = fmt.Sprintf("Exposing module %q%s as an MCP server on standard input/output", modName, extraCore)
