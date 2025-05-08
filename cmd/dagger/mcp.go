@@ -87,7 +87,8 @@ func mcpStart(ctx context.Context, engineClient *client.Client) error {
 			return fmt.Errorf("error making workdir: %w", err)
 		}
 
-		q = q.Root().Select("env")
+		q = q.Root().Select("env").
+			Arg("writable", true)
 
 		extraCore := ""
 		if envPrivileged {
