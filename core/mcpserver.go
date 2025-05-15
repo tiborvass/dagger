@@ -141,7 +141,7 @@ func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
 					Field: "export",
 					Args: []dagql.NamedInput{
 						{Name: "path", Value: dagql.String(".")},
-						{Name: "wipe", Value: dagql.Boolean(true)},
+						{Name: "wipe", Value: dagql.Boolean(false)},
 					},
 				},
 			)
