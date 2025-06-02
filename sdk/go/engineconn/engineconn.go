@@ -22,6 +22,9 @@ type EngineConn interface {
 
 type Config struct {
 	Workdir         string
+	Stdin           io.ReadCloser
+	Stdout          io.Writer
+	Stderr          io.Writer
 	LogOutput       io.Writer
 	RunnerHost      string
 	Conn            EngineConn

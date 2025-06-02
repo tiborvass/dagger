@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -21,8 +20,10 @@ import (
 )
 
 var (
-	sessionLabels  = enginetel.NewLabelFlag()
-	sessionVersion string
+	sessionLabels                = enginetel.NewLabelFlag()
+	sessionVersion               string
+	sessionConnectParamsPipePath string
+	sessionLogPipePath           string
 )
 
 func sessionCmd() *cobra.Command {
@@ -34,6 +35,8 @@ func sessionCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
+	cmd.Flags().StringVar(&sessionConnectParamsPipePath, "connect-params-pipe", "", "named pipe on which dagger sends the connect parameters")
+	cmd.Flags().StringVar(&sessionLogPipePath, "log-pipe", "", "named pipe on which dagger sends the log output")
 	// This is not used by kept for backward compatibility.
 	// We don't want SDKs failing because this flag is not defined.
 	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
@@ -54,6 +57,18 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
+	logPipe, err := os.OpenFile(sessionLogPipePath, os.O_RDONLY, os.ModeNamedPipe)
+	if err != nil {
+		return err
+	}
+	defer logPipe.Close()
+
+	connectParamsPipe, err := os.OpenFile(sessionConnectParamsPipePath, os.O_RDONLY, os.ModeNamedPipe)
+	if err != nil {
+		return err
+	}
+	defer connectParamsPipe.Close()
+
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
 		return err
@@ -70,12 +85,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	// shutdown if requested via signal
 	go func() {
 		<-signalCh
-		l.Close()
-	}()
-
-	// shutdown if our parent closes stdin
-	go func() {
-		io.Copy(io.Discard, os.Stdin)
 		l.Close()
 	}()
 
@@ -98,20 +107,14 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 			},
 		}
 
-		paramBytes, err := json.Marshal(connectParams{
+		enc := json.NewEncoder(connectParamsPipe)
+		if err := enc.Encode(connectParams{
 			Port:         port,
 			SessionToken: sessionToken.String(),
-		})
-		if err != nil {
-			return err
+		}); err != nil {
+			fmt.Fprintln(logPipe, err)
+			l.Close()
 		}
-		paramBytes = append(paramBytes, '\n')
-		go func() {
-			if _, err := os.Stdout.Write(paramBytes); err != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), err)
-				l.Close()
-			}
-		}()
 
 		err = srv.Serve(l)
 		// if error is "use of closed network connection", it's expected
