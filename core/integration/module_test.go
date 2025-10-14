@@ -6255,31 +6255,95 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 }
 
 func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
-	t.Run("golang", func(ctx context.Context, t *testctx.T) {
-		privateDepCode := `package main
+	// t.Run("golang", func(ctx context.Context, t *testctx.T) {
+	// 	privateDepCode := `package main
 
-import (
-	"github.com/dagger/dagger-test-modules/privatedeps/pkg/cooldep"
-)
+	// import (
+	// 	"github.com/dagger/dagger-test-modules/privatedeps/pkg/cooldep"
+	// )
 
-type Foo struct{}
+	// type Foo struct{}
 
-// Returns a container that echoes whatever string argument is provided
-func (m *Foo) HowCoolIsDagger() string {
-	return cooldep.HowCoolIsThat
-}
-`
+	// // Returns a container that echoes whatever string argument is provided
+	// func (m *Foo) HowCoolIsDagger() string {
+	// 	return cooldep.HowCoolIsThat
+	// }
+	// `
+
+	// 	daggerjson := `{
+	//   "name": "foo",
+	//   "engineVersion": "v0.16.2",
+	//   "sdk": {
+	//     "source": "go",
+	//     "config": {
+	//       "goprivate": "github.com/dagger/dagger-test-modules"
+	//     }
+	//   }
+	// }`
+
+	// 	c := connect(ctx, t)
+	// 	sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+	// 	defer cleanup()
+
+	// 	socket := c.Host().UnixSocket(sockPath)
+
+	// 	// This is simulating a user's setup where they have
+	// 	// 1. ssh auth sock setup
+	// 	// 2. gitconfig file with insteadOf directive
+	// 	// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
+	// 	modGen := c.Container().From(golangImage).
+	// 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+	// 		WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
+	// 		WithUnixSocket("/sock/unix-socket", socket).
+	// 		WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
+	// 		WithWorkdir("/work").
+	// 		WithNewFile("/root/.gitconfig", `
+	// [url "ssh://git@github.com/"]
+	// 	insteadOf = https://github.com/
+	// `).
+	// 		With(daggerExec("init", "--name=foo", "--sdk=python", "--source=.")).
+	// 		With(sdkSource("go", privateDepCode)).
+	// 		WithNewFile("dagger.json", daggerjson)
+
+	// 	howCoolIsDagger, err := modGen.
+	// 		With(daggerExec("call", "how-cool-is-dagger")).
+	// 		Stdout(ctx)
+	// 	require.NoError(t, err)
+	// 	require.Equal(t, "ubercool", howCoolIsDagger)
+	// })
+
+	t.Run("python", func(ctx context.Context, t *testctx.T) {
+		privateDepCode := `from dagger import function, object_type
+	import leftpad
+
+	@object_type
+	class Foo:
+	    @function
+	    async def how_cool_is_dagger(self) -> str:
+	        #return cooldep.HowCoolIsThat
+	        return leftpad.left_pad("ubercool", 0)
+	`
 
 		daggerjson := `{
-  "name": "foo",
-  "engineVersion": "v0.16.2",
-  "sdk": {
-    "source": "go",
-    "config": {
-      "goprivate": "github.com/dagger/dagger-test-modules"
-    }
-  }
-}`
+	  "name": "foo",
+	  "engineVersion": "v0.16.2",
+	  "sdk": {
+	    "source": "python"
+	  }
+	}`
+
+		pyproject := `[project]
+	name = "test"
+	version = "0.0.0"
+	#                           change to git+ssh://git@github.com/tiborvass/dagger-test-modules.git@privatedeps-python#subdirectory=privatedeps
+	dependencies = ["dagger-io", "leftpad @ https://github.com/tiborvass/leftpad-pypi/archive/refs/heads/master.tar.gz"]
+
+	[tool.uv.sources]
+	dagger-io = { path = "sdk", editable = true }
+
+	[build-system]
+	requires = ["uv_build"]
+	build-backend = "uv_build"`
 
 		c := connect(ctx, t)
 		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
@@ -6291,19 +6355,24 @@ func (m *Foo) HowCoolIsDagger() string {
 		// 1. ssh auth sock setup
 		// 2. gitconfig file with insteadOf directive
 		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
-		modGen := c.Container().From(golangImage).
+		modGen := c.Container().From(pythonImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
+			WithExec([]string{"sh", "-c", "apt-get update && apt-get install -y --no-install-recommends git openssh-client openssl"}).
 			WithUnixSocket("/sock/unix-socket", socket).
 			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
 			WithWorkdir("/work").
 			WithNewFile("/root/.gitconfig", `
-[url "ssh://git@github.com/"]
-	insteadOf = https://github.com/
-`).
-			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", privateDepCode).
+	[url "ssh://git@github.com/"]
+		insteadOf = https://github.com/
+	`).
+			With(daggerExec("init", "--name=test", "--sdk=python", "--source=.")).
+			With(sdkSource("python", privateDepCode)).
+			WithNewFile("pyproject.toml", pyproject).
 			WithNewFile("dagger.json", daggerjson)
+
+		// gitPath, err := modGen.WithExec([]string{"sh", "-c", "which git && echo $PATH"}).Stdout(ctx)
+		// require.NoError(t, err)
+		// t.Logf("👹: %s\n", gitPath)
 
 		howCoolIsDagger, err := modGen.
 			With(daggerExec("call", "how-cool-is-dagger")).

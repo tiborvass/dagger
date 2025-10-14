@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"python-sdk/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 const (
@@ -466,10 +468,13 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 // Install the module's package and dependencies
 func (m *PythonSdk) WithInstall() *PythonSdk {
+	// git+ssh requires a git binary as uv shells out to it. See upstream issue ...
+	ctr := dag.Container().From("alpine/git").WithDirectory("/", m.Container.Rootfs())
+
 	// NB: Only enable bytecode compilation in `dagger call`
 	// (not `dagger init/develop`), to avoid having to remove the .pyc files
 	// before exporting the module back to the host.
-	ctr := m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1")
+	ctr = m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1")
 
 	// Support uv.lock for simple and fast project management workflow.
 	if m.UseUvLock() {
