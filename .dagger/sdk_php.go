@@ -6,9 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 const (
@@ -32,33 +31,45 @@ func (t PHPSDK) Source() *dagger.Directory {
 	return t.Dagger.Source.Directory("sdk/php")
 }
 
-// Lint the PHP SDK
-func (t PHPSDK) CheckLint(ctx context.Context) error {
-	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()})
+func (t PHPSDK) Lint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("PHP CodeSniffer", func(ctx context.Context) error {
+			_, err := t.PhpCodeSniffer(ctx)
+			return err
+		}).
+		WithJob("PHPStan", func(ctx context.Context) error {
+			_, err := t.PhpStan(ctx)
+			return err
+		}).
+		Run(ctx)
+}
 
-	eg := errgroup.Group{}
-	eg.Go(func() (rerr error) {
-		_, err := dev.Lint().Sync(ctx)
-		return err
-	})
+// Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
+func (t PHPSDK) PhpCodeSniffer(ctx context.Context) (CheckStatus, error) {
+	_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()}).
+		Lint().
+		Sync(ctx)
+	return CheckCompleted, err
+}
 
-	eg.Go(func() (rerr error) {
-		_, err := dev.Analyze().Sync(ctx)
-		return err
-	})
-
-	return eg.Wait()
+// Analyze the PHP code with PHPStan (https://phpstan.org)
+func (t PHPSDK) PhpStan(ctx context.Context) (CheckStatus, error) {
+	_, err := dev.Analyze().Sync(ctx)
+	return CheckCompleted, err
 }
 
 // Test the PHP SDK
-func (t PHPSDK) Test(ctx context.Context) error {
+func (t PHPSDK) Test(ctx context.Context) (CheckStatus, error) {
 	base := dag.PhpSDKDev().Base().
 		With(t.Dagger.devEngineSidecar()).
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
 
 	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base, Source: t.Source()})
 	_, err := dev.Test().Sync(ctx)
-	return err
+	if err != nil {
+		return CheckCompleted, err
+	}
+	return CheckCompleted, nil
 }
 
 // Regenerate the PHP SDK API + docs
@@ -133,16 +144,8 @@ func (t PHPSDK) doctumConfig() *dagger.File {
 }
 
 // Test the publishing process
-func (t PHPSDK) CheckReleaseDryRun(ctx context.Context) error {
-	return t.Publish(
-		ctx,
-		"HEAD",
-		true,
-		"https://github.com/dagger/dagger-php-sdk.git",
-		"dagger-ci",
-		"hello@dagger.io",
-		nil,
-	)
+func (t PHPSDK) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, t.Publish(ctx, "HEAD", true, "https://github.com/dagger/dagger-php-sdk.git", "dagger-ci", "hello@dagger.io", nil)
 }
 
 // Publish the PHP SDK
