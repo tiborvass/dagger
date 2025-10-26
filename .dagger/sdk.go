@@ -29,50 +29,53 @@ func (dev *DaggerDev) SDK() *SDK {
 }
 
 // Run all checks for all SDKs
-func (dev *DaggerDev) TestSDKs(ctx context.Context) (CheckStatus, error) {
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (dev *DaggerDev) TestSDKs(ctx context.Context) error {
+	jobs := parallel.New()
 	type tester interface {
 		Name() string
 		Test(context.Context) (CheckStatus, error)
 	}
-	jobs := parallel.New()
 	for _, sdk := range allSDKs[tester](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
 			_, err := sdk.Test(ctx)
 			return err
 		})
 	}
-	return CheckCompleted, jobs.Run(ctx)
+	// Some (but not all) sdk test functions are also aggregators which will be replaced by PR 11211. Call them here too.
+	type deprecatedTester interface {
+		Name() string
+		Test(context.Context) error
+	}
+	for _, sdk := range allSDKs[deprecatedTester](dev) {
+		jobs = jobs.WithJob(sdk.Name(), sdk.Test)
+	}
+	return jobs.Run(ctx)
 }
 
 // Run linters for all SDKs
-func (dev *DaggerDev) LintSDKs(ctx context.Context) (CheckStatus, error) {
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
+	jobs := parallel.New()
 	type linter interface {
 		Name() string
 		Lint(context.Context) (CheckStatus, error)
 	}
-	jobs := parallel.New()
 	for _, sdk := range allSDKs[linter](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
 			_, err := sdk.Lint(ctx)
 			return err
 		})
 	}
-	return CheckCompleted, jobs.Run(ctx)
-}
-
-func (dev *DaggerDev) releaseDryRunSDKs(ctx context.Context) (CheckStatus, error) {
-	type dryRunner interface {
+	// Some (but not all) sdk lint functions are also aggregators which will be replaced by PR 11211. Call them here too.
+	type deprecatedLinter interface {
 		Name() string
-		ReleaseDryRun(context.Context) (CheckStatus, error)
+		Lint(context.Context) error
 	}
-	jobs := parallel.New()
-	for _, sdk := range allSDKs[dryRunner](dev) {
-		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
-			_, err := sdk.ReleaseDryRun(ctx)
-			return err
-		})
+	for _, sdk := range allSDKs[deprecatedLinter](dev) {
+		jobs = jobs.WithJob(sdk.Name(), sdk.Lint)
 	}
-	return CheckCompleted, jobs.Run(ctx)
+	return jobs.Run(ctx)
 }
 
 // A dev environment for the official Dagger SDKs
@@ -138,13 +141,6 @@ func allSDKs[T any](dev *DaggerDev) []T {
 	return result
 }
 
-func (dev *DaggerDev) codegenBinary() *dagger.File {
-	return dev.godev().Binary("./cmd/codegen", dagger.GoBinaryOpts{
-		NoSymbols: true,
-		NoDwarf:   true,
-	})
-}
-
 // Return the introspection.json from the current dev engine
 func (dev *DaggerDev) introspectionJSON() *dagger.File {
 	return dag.
@@ -153,7 +149,7 @@ func (dev *DaggerDev) introspectionJSON() *dagger.File {
 		}).
 		Container().
 		With(dev.devEngineSidecar()).
-		WithFile("/usr/local/bin/codegen", dev.codegenBinary()).
+		WithFile("/usr/local/bin/codegen", dag.Codegen().Binary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json")
 }

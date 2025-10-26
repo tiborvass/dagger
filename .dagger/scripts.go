@@ -21,24 +21,37 @@ type Scripts struct {
 }
 
 // Lint scripts files
-func (s Scripts) Lint(ctx context.Context) (CheckStatus, error) {
-	return CheckCompleted, parallel.New().
-		WithJob("lint install.sh", func(ctx context.Context) error {
-			return dag.Shellcheck().
-				Check(s.Dagger.Source.File("install.sh")).
-				Assert(ctx)
+// // TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (s Scripts) Lint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("install.sh", func(ctx context.Context) error {
+			_, err := s.LintSh(ctx)
+			return err
 		}).
-		WithJob("lint install.ps1", func(ctx context.Context) error {
-			return dag.PsAnalyzer().
-				Check(s.Dagger.Source.File("install.ps1"), dagger.PsAnalyzerCheckOpts{
-					// Exclude the unused parameters for now due because PSScriptAnalyzer treat
-					// parameters in `Install-Dagger` as unused but the script won't run if we delete
-					// it.
-					ExcludeRules: []string{"PSReviewUnusedParameter"},
-				}).
-				Assert(ctx)
+		WithJob("install.ps1", func(ctx context.Context) error {
+			_, err := s.LintPowershell(ctx)
+			return err
 		}).
 		Run(ctx)
+}
+
+// ShellCheck scripts files
+func (s Scripts) LintSh(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, dag.Shellcheck().
+		Check(s.Dagger.Source.File("install.sh")).
+		Assert(ctx)
+}
+
+// LintPowershell scripts files
+func (s Scripts) LintPowershell(ctx context.Context) (CheckStatus, error) {
+	return CheckCompleted, dag.PsAnalyzer().
+		Check(s.Dagger.Source.File("install.ps1"), dagger.PsAnalyzerCheckOpts{
+			// Exclude the unused parameters for now due because PSScriptAnalyzer treat
+			// parameters in `Install-Dagger` as unused but the script won't run if we delete
+			// it.
+			ExcludeRules: []string{"PSReviewUnusedParameter"},
+		}).
+		Assert(ctx)
 }
 
 // Test install scripts

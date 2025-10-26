@@ -28,7 +28,7 @@ func (dev *DaggerDev) Playground(
 	if err != nil {
 		return nil, err
 	}
-	return dev.godev().Env().
+	return dag.Container().
 			WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").
 			WithServiceBinding("dagger-engine", svc).

@@ -31,7 +31,7 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	err := parallel.New().
 		WithJob("docs", func(ctx context.Context) error {
 			var err error
-			genDocs, err = dag.Docs().Generate().Sync(ctx)
+			genDocs, err = dev.Docs().Generate().Sync(ctx)
 			if err != nil {
 				return err
 			}

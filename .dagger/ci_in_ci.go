@@ -4,34 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/util/parallel"
 )
-
-// Run all linters
-func (dev *DaggerDev) Lint(ctx context.Context) (CheckStatus, error) {
-	return CheckCompleted, parallel.New().
-		WithJob("Go packages", func(ctx context.Context) error {
-			_, err := dev.LintGo(ctx)
-			return err
-		}).
-		WithJob("Docs", func(ctx context.Context) error {
-			_, err := dev.LintDocs(ctx)
-			return err
-		}).
-		WithJob("Helm chart", func(ctx context.Context) error {
-			_, err := dev.LintHelm(ctx)
-			return err
-		}).
-		WithJob("Install scripts", func(ctx context.Context) error {
-			_, err := dev.Scripts().Lint(ctx)
-			return err
-		}).
-		WithJob("SDKs", func(ctx context.Context) error {
-			_, err := dev.LintSDKs(ctx)
-			return err
-		}).
-		Run(ctx)
-}
 
 // "CI in CI": check that Dagger can still run its own CI
 // Note: this doesn't actually call all CI checks: only a small subset,

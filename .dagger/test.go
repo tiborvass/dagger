@@ -612,7 +612,11 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
-	tests := t.Dagger.godev().Env().
+	GoToolchain, err := t.Dagger.Go(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	tests := GoToolchain.Env().
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("daggerengine", devEngineSvc).

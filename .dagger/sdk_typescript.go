@@ -76,8 +76,7 @@ func (t TypescriptSDK) RuntimeSource() *dagger.Directory {
 	})
 }
 
-// Test the Typescript SDK
-func (t TypescriptSDK) Test(ctx context.Context) (CheckStatus, error) {
+func (t TypescriptSDK) TestNode(ctx context.Context) (CheckStatus, error) {
 	jobs := parallel.New()
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
@@ -94,6 +93,10 @@ func (t TypescriptSDK) Test(ctx context.Context) (CheckStatus, error) {
 			},
 		)
 	}
+	return CheckCompleted, jobs.Run(ctx)
+}
+func (t TypescriptSDK) TestBun(ctx context.Context) (CheckStatus, error) {
+	jobs := parallel.New()
 	jobs = jobs.WithJob(
 		fmt.Sprintf("test with bun version %s", bunVersion),
 		func(ctx context.Context) error {
@@ -107,13 +110,28 @@ func (t TypescriptSDK) Test(ctx context.Context) (CheckStatus, error) {
 	return CheckCompleted, jobs.Run(ctx)
 }
 
+// Test the Typescript SDK
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (t TypescriptSDK) Test(ctx context.Context) error {
+	return parallel.New().
+		WithJob("node", func(ctx context.Context) error {
+			_, err := t.TestNode(ctx)
+			return err
+		}).
+		WithJob("bun", func(ctx context.Context) error {
+			_, err := t.TestBun(ctx)
+			return err
+		}).
+		Run(ctx)
+}
+
 // Regenerate the Typescript client bindings
 func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 	return t.NodeJsContainer("").
 		WithMountedDirectory(".", t.Dagger.Source).
 		WithExec([]string{"yarn", "--cwd", "sdk/typescript", "install"}).
 		With(t.Dagger.devEngineSidecar()).
-		WithFile("/usr/local/bin/codegen", t.Dagger.codegenBinary()).
+		WithFile("/usr/local/bin/codegen", dag.Codegen().Binary()).
 		WithExec([]string{
 			"codegen", "generate-library", "--lang", "typescript", "-o", "./sdk/typescript/src/api/",
 		}).

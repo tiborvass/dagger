@@ -6,11 +6,13 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/util/parallel"
 )
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Source *dagger.Directory
+	Source   *dagger.Directory // +private
+	GoSource *dagger.Directory // +private
 
 	Version string
 	Tag     string
@@ -41,6 +43,16 @@ func New(
 	source *dagger.Directory,
 
 	// +defaultPath="/"
+	// +ignore=[
+	// "*",
+	// "!**/*.go",
+	// "!**/go.mod",
+	// "!**/go.sum",
+	// "!**/dagger.json"
+	// ]
+	goSource *dagger.Directory,
+
+	// +defaultPath="/"
 	git *dagger.GitRepository,
 
 	// +optional
@@ -58,6 +70,7 @@ func New(
 
 	dev := &DaggerDev{
 		Source:    source,
+		GoSource:  goSource,
 		Tag:       tag,
 		Git:       git,
 		Version:   version,
@@ -71,4 +84,29 @@ func (dev *DaggerDev) withDockerCfg(ctr *dagger.Container) *dagger.Container {
 		return ctr
 	}
 	return ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
+}
+
+// Run all linters
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (dev *DaggerDev) Lint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("Go packages", func(ctx context.Context) error {
+			goToolchain, err := dev.Go(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = goToolchain.Lint(ctx)
+			return err
+		}).
+		WithJob("Docs", func(ctx context.Context) error {
+			_, err := dev.Docs().Lint(ctx)
+			return err
+		}).
+		WithJob("Helm chart", func(ctx context.Context) error {
+			_, err := dev.LintHelm(ctx)
+			return err
+		}).
+		WithJob("Install scripts", dev.Scripts().Lint).
+		WithJob("SDKs", dev.LintSDKs).
+		Run(ctx)
 }

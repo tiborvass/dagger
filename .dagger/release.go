@@ -7,7 +7,22 @@ import (
 	"github.com/dagger/dagger/util/parallel"
 )
 
-func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
+// Release returns the release toolchain
+func (dev *DaggerDev) Release() *Release {
+	return &Release{
+		Source: dev.Source,
+		Dev:    dev,
+	}
+}
+
+// Release provides toolchain for release operations
+type Release struct {
+	Source *dagger.Directory // +private
+	Dev    *DaggerDev        // +private
+}
+
+// DryRun performs a dry run of the release process
+func (r *Release) DryRun(ctx context.Context) (CheckStatus, error) {
 	return CheckCompleted, parallel.New().
 		WithJob("Helm chart", func(ctx context.Context) error {
 			_, err := dag.Helm().ReleaseDryRun(ctx)
@@ -21,15 +36,26 @@ func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (CheckStatus, error) {
 			_, err := dag.DaggerEngine().ReleaseDryRun(ctx)
 			return err
 		}).
-		WithJob("SDKs", func(ctx context.Context) error {
-			_, err := dev.releaseDryRunSDKs(ctx)
-			return err
-		}).
+		WithJob("SDKs", r.dryRunSDKs).
 		Run(ctx)
 }
 
-// Bump the version of all versioned components
-func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
+func (r *Release) dryRunSDKs(ctx context.Context) error {
+	type dryRunner interface {
+		Name() string
+		ReleaseDryRun(context.Context) (CheckStatus, error)
+	}
+	jobs := parallel.New()
+	for _, sdk := range allSDKs[dryRunner](r.Dev) {
+		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
+			_, err := sdk.ReleaseDryRun(ctx)
+			return err
+		})
+	}
+	return jobs.Run(ctx)
+}
+
+func (r *Release) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
 	var (
 		bumpDocs, bumpHelm *dagger.Changeset
 		bumpSDKs           []*dagger.Changeset
@@ -37,7 +63,7 @@ func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changes
 	err := parallel.New().
 		WithJob("bump docs version", func(ctx context.Context) error {
 			var err error
-			bumpDocs, err = dag.Docs().Bump(version).Sync(ctx)
+			bumpDocs, err = dag.DaggerDocs().Bump(version).Sync(ctx)
 			return err
 		}).
 		WithJob("bump helm chart version", func(ctx context.Context) error {
@@ -56,7 +82,7 @@ func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changes
 				Bump(context.Context, string) (*dagger.Changeset, error)
 				Name() string
 			}
-			bumpers := allSDKs[bumper](dev)
+			bumpers := allSDKs[bumper](r.Dev)
 			bumpSDKs = make([]*dagger.Changeset, len(bumpers))
 			for i, sdk := range bumpers {
 				bumped, err := sdk.Bump(ctx, version)
@@ -75,5 +101,5 @@ func (dev *DaggerDev) Bump(ctx context.Context, version string) (*dagger.Changes
 	if err != nil {
 		return nil, err
 	}
-	return changesetMerge(dev.Source, append(bumpSDKs, bumpDocs, bumpHelm)...), nil
+	return changesetMerge(r.Dev.Source, append(bumpSDKs, bumpDocs, bumpHelm)...), nil
 }

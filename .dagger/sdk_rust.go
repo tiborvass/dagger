@@ -30,23 +30,32 @@ func (r RustSDK) Name() string {
 }
 
 // Lint the Rust SDK
-// Note: technically this is a code format check, not a lint check
-func (r RustSDK) Lint(ctx context.Context) (CheckStatus, error) {
-	ctr := r.DevContainer()
-	return CheckCompleted, parallel.New().
-		WithJob("check rust format", func(ctx context.Context) error {
-			_, err := ctr.
-				WithExec([]string{"cargo", "fmt", "--check"}).
-				Sync(ctx)
+// TODO: remove after merging https://github.com/dagger/dagger/pull/11211
+func (r RustSDK) Lint(ctx context.Context) error {
+	return parallel.New().
+		WithJob("check format", func(ctx context.Context) error {
+			_, err := r.CheckFormat(ctx)
 			return err
 		}).
-		WithJob("check rust compilation", func(ctx context.Context) error {
-			_, err := ctr.
-				WithExec([]string{"cargo", "check", "--all", "--release"}).
-				Sync(ctx)
+		WithJob("check compilation", func(ctx context.Context) error {
+			_, err := r.CheckCompilation(ctx)
 			return err
 		}).
 		Run(ctx)
+}
+
+func (r RustSDK) CheckFormat(ctx context.Context) (CheckStatus, error) {
+	_, err := r.DevContainer().
+		WithExec([]string{"cargo", "fmt", "--check"}).
+		Sync(ctx)
+	return CheckCompleted, err
+}
+
+func (r RustSDK) CheckCompilation(ctx context.Context) (CheckStatus, error) {
+	_, err := r.DevContainer().
+		WithExec([]string{"cargo", "check", "--all", "--release"}).
+		Sync(ctx)
+	return CheckCompleted, err
 }
 
 // Test the Rust SDK
