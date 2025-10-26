@@ -54,7 +54,9 @@ func (t PHPSDK) PhpCodeSniffer(ctx context.Context) (CheckStatus, error) {
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
 func (t PHPSDK) PhpStan(ctx context.Context) (CheckStatus, error) {
-	_, err := dev.Analyze().Sync(ctx)
+	_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: t.Source()}).
+		Analyze().
+		Sync(ctx)
 	return CheckCompleted, err
 }
 

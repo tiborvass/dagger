@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
@@ -36,6 +40,50 @@ func changesetMerge(base *dagger.Directory, changesets ...*dagger.Changeset) *da
 		dir = dir.WithChanges(changeset)
 	}
 	return dir.Changes(base)
+}
+
+func assertNoChanges(ctx context.Context, cs *dagger.Changeset, log io.Writer) error {
+	empty, err := cs.IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		summary, err := changesetSummary(ctx, cs)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(log, summary)
+		return errors.New("generated files are not up-to-date")
+	}
+	return nil
+}
+
+func changesetSummary(ctx context.Context, cs *dagger.Changeset) (string, error) {
+	added, err := cs.AddedPaths(ctx)
+	if err != nil {
+		return "", err
+	}
+	removed, err := cs.RemovedPaths(ctx)
+	if err != nil {
+		return "", err
+	}
+	modified, err := cs.ModifiedPaths(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`%d MODIFIED:
+%s
+
+%d REMOVED:
+%s
+
+%d ADDED:
+%s
+`,
+		len(modified), strings.Join(modified, "\n"),
+		len(removed), strings.Join(removed, "\n"),
+		len(added), strings.Join(added, "\n"),
+	), nil
 }
 
 // Return the changes between two directory, excluding the specified path patterns from the comparison

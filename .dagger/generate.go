@@ -2,11 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"slices"
-	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/util/parallel"
@@ -23,75 +20,48 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 	// +optional
 	check bool,
 ) (*dagger.Changeset, error) {
-	var (
-		genDocs, genEngine, genChangelog, genGHA *dagger.Changeset
-		genSDKs                                  []*dagger.Changeset
-	)
-	maybeCheck := func(ctx context.Context, cs *dagger.Changeset) (*dagger.Changeset, error) {
+	var genDocs, genEngine, genChangelog, genGHA *dagger.Changeset
+	var genSDKs []*dagger.Changeset
+	maybeCheck := func(ctx context.Context, changes *dagger.Changeset) error {
 		if !check {
-			// Always use the context, for correct span attribution
-			return cs.Sync(ctx)
+			return nil
 		}
-		diffSize, err := cs.AsPatch().Size(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if diffSize > 0 {
-			added, err := cs.AddedPaths(ctx)
-			if err != nil {
-				return nil, err
-			}
-			removed, err := cs.RemovedPaths(ctx)
-			if err != nil {
-				return nil, err
-			}
-			modified, err := cs.ModifiedPaths(ctx)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Fprintf(os.Stderr, `%d MODIFIED:
-%s
-
-%d REMOVED:
-%s
-
-%d ADDED:
-%s
-`,
-				len(modified), strings.Join(modified, "\n"),
-				len(removed), strings.Join(removed, "\n"),
-				len(added), strings.Join(added, "\n"),
-			)
-			return cs, errors.New("generated files are not up-to-date")
-		}
-		return cs, nil
-	}
-	verb := "generate "
-	if check {
-		verb += "& check "
+		return assertNoChanges(ctx, changes, os.Stderr)
 	}
 	err := parallel.New().
-		WithJob(verb+"docs", func(ctx context.Context) error {
+		WithJob("docs", func(ctx context.Context) error {
 			var err error
-			genDocs, err = maybeCheck(ctx, dag.Docs().Generate())
-			return err
+			genDocs, err = dag.Docs().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genDocs)
 		}).
-		WithJob(verb+"engine", func(ctx context.Context) error {
+		WithJob("engine", func(ctx context.Context) error {
 			var err error
-			genEngine, err = maybeCheck(ctx, dag.DaggerEngine().Generate())
-			return err
+			genEngine, err = dag.DaggerEngine().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genEngine)
 		}).
-		WithJob(verb+"changelog", func(ctx context.Context) error {
+		WithJob("changelog", func(ctx context.Context) error {
 			var err error
-			genChangelog, err = maybeCheck(ctx, dag.Changelog().Generate())
-			return err
+			genChangelog, err = dag.Changelog().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genChangelog)
 		}).
-		WithJob(verb+"Github Actions config", func(ctx context.Context) error {
+		WithJob("Github Actions config", func(ctx context.Context) error {
 			var err error
-			genGHA, err = maybeCheck(ctx, dag.Ci().Generate())
-			return err
+			genGHA, err = dag.Ci().Generate().Sync(ctx)
+			if err != nil {
+				return err
+			}
+			return maybeCheck(ctx, genGHA)
 		}).
-		WithJob(verb+"SDKs", func(ctx context.Context) error {
+		WithJob("SDKs", func(ctx context.Context) error {
 			type generator interface {
 				Name() string
 				Generate(context.Context) (*dagger.Changeset, error)
@@ -101,12 +71,13 @@ func (dev *DaggerDev) Generate(ctx context.Context,
 			jobs := parallel.New()
 			for i, sdk := range generators {
 				jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
+					var err error
 					genSDK, err := sdk.Generate(ctx)
 					if err != nil {
 						return err
 					}
-					genSDKs[i], err = maybeCheck(ctx, genSDK)
-					return err
+					genSDKs[i] = genSDK
+					return maybeCheck(ctx, genSDK)
 				})
 			}
 			return jobs.Run(ctx)

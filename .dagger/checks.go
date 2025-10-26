@@ -39,7 +39,7 @@ func (dev *DaggerDev) Lint(ctx context.Context) (CheckStatus, error) {
 // The actual checks being performed is an implementation detail, and should NOT be relied on.
 // In other words, don't skip running <foo> just because it happens to be run here!
 func (dev *DaggerDev) CiInCi(ctx context.Context) (CheckStatus, error) {
-	ctr, err := dev.Playground(ctx, dev.Source, DistroAlpine, false, false)
+	ctr, err := dev.Playground(ctx, DistroAlpine, false, false)
 	if err != nil {
 		return CheckCompleted, err
 	}
