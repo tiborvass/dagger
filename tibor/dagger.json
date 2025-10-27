@@ -1,0 +1,7 @@
+{
+  "name": "tibor",
+  "engineVersion": "v0.19.4-010101000000-dev-fdbe4ac89197",
+  "sdk": {
+    "source": "go"
+  }
+}
