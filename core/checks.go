@@ -186,8 +186,9 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			check.Completed = true
 			if checkErr != nil {
 				check.Passed = false // redundant but let's be explicit
-				return err           // Show some red in telemetry
+				return checkErr      // Show some red in telemetry
 			}
+			check.Passed = true
 			return nil
 		})
 	}
