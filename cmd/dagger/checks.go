@@ -97,12 +97,6 @@ func loadCheckGroupInfo(ctx context.Context, checks []dagger.Check) (*CheckGroup
 			}
 			checkInfo.Emoji = emoji
 
-			message, err := check.Message(ctx)
-			if err != nil {
-				return err
-			}
-			checkInfo.Message = message
-
 			info.Checks = append(info.Checks, checkInfo)
 		}
 		return nil
@@ -121,7 +115,6 @@ type CheckInfo struct {
 	Name        string
 	Description string
 	Emoji       string
-	Message     string
 }
 
 // 'dagger checks -l'
@@ -160,13 +153,12 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Co
 		return err
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintf(tw, "%s\t%s\t%s\n",
+	fmt.Fprintf(tw, "%s\t%s\n",
 		termenv.String("Name").Bold(),
 		termenv.String("Result").Bold(),
-		termenv.String("Message").Bold(),
 	)
 	for _, check := range info.Checks {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, check.Emoji, check.Message)
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, check.Emoji)
 	}
 	return tw.Flush()
 }
