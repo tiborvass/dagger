@@ -48,7 +48,6 @@ type Check struct {
 	Description string   `field:"true" doc:"The description of the check"`
 	Completed   bool     `field:"true" doc:"Whether the check completed"`
 	Passed      bool     `field:"true" doc:"Whether the check passed"`
-	Message     string   `field:"true" doc:"A message emitted when running the check"`
 }
 
 func (*Check) Type() *ast.Type {
@@ -177,7 +176,6 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
-			check.Message = ""
 			var status CheckStatus
 			selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
 			for _, field := range check.Path {
@@ -188,8 +186,7 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 			check.Completed = true
 			if checkErr != nil {
 				check.Passed = false // redundant but let's be explicit
-				check.Message = checkErr.Error()
-				return err // Show some red in telemetry
+				return err           // Show some red in telemetry
 			}
 			return nil
 		})
@@ -219,7 +216,6 @@ func (r *CheckGroup) Report(ctx context.Context) (*File, error) {
 			check.Name(),
 			check.Description,
 			check.ResultEmoji(),
-			check.Message,
 		})
 	}
 	contents := []byte(markdownTable(headers, rows...))
