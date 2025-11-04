@@ -172,11 +172,11 @@ func (r *CheckGroup) Run(ctx context.Context) (*CheckGroup, error) {
 	jobs := parallel.New()
 	for _, check := range r.Checks {
 		// FIXME: how to set custom span attr? Do we still need to?
-		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
+		jobs = jobs.WithCheck(check.Name(), func(ctx context.Context) error {
 			// Reset output fields, in case we're re-running
 			check.Completed = false
 			check.Passed = false
-			var status CheckStatus
+			var status any
 			selectPath := []dagql.Selector{{Field: gqlFieldName(r.Module.Name())}}
 			for _, field := range check.Path {
 				selectPath = append(selectPath, dagql.Selector{Field: field})

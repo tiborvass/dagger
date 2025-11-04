@@ -5,6 +5,9 @@ package idtui
 
 import (
 	"context"
+	"io"
+	"sync"
+
 	"dagger.io/dagger"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -13,7 +16,6 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"sync"
 )
 
 // Ensure, that FrontendMock does implement Frontend.
@@ -43,6 +45,9 @@ var _ Frontend = &FrontendMock{}
 //			},
 //			OptsFunc: func() *dagui.FrontendOpts {
 //				panic("mock out the Opts method")
+//			},
+//			RegisterPostRunHookFunc: func(f func(*dagui.DB, io.Writer)) {
+//				panic("mock out the RegisterPostRunHook method")
 //			},
 //			RevealAllSpansFunc: func()  {
 //				panic("mock out the RevealAllSpans method")
@@ -95,6 +100,9 @@ type FrontendMock struct {
 
 	// OptsFunc mocks the Opts method.
 	OptsFunc func() *dagui.FrontendOpts
+
+	// RegisterPostRunHookFunc mocks the RegisterPostRunHook method.
+	RegisterPostRunHookFunc func(f func(*dagui.DB, io.Writer))
 
 	// RevealAllSpansFunc mocks the RevealAllSpans method.
 	RevealAllSpansFunc func()
@@ -159,6 +167,11 @@ type FrontendMock struct {
 		// Opts holds details about calls to the Opts method.
 		Opts []struct {
 		}
+		// RegisterPostRunHook holds details about calls to the RegisterPostRunHook method.
+		RegisterPostRunHook []struct {
+			// F is the f argument value.
+			F func(*dagui.DB, io.Writer)
+		}
 		// RevealAllSpans holds details about calls to the RevealAllSpans method.
 		RevealAllSpans []struct {
 		}
@@ -213,21 +226,22 @@ type FrontendMock struct {
 		SpanExporter []struct {
 		}
 	}
-	lockBackground        sync.RWMutex
-	lockHandleForm        sync.RWMutex
-	lockHandlePrompt      sync.RWMutex
-	lockLogExporter       sync.RWMutex
-	lockMetricExporter    sync.RWMutex
-	lockOpts              sync.RWMutex
-	lockRevealAllSpans    sync.RWMutex
-	lockRun               sync.RWMutex
-	lockSetClient         sync.RWMutex
-	lockSetCloudURL       sync.RWMutex
-	lockSetPrimary        sync.RWMutex
-	lockSetSidebarContent sync.RWMutex
-	lockSetVerbosity      sync.RWMutex
-	lockShell             sync.RWMutex
-	lockSpanExporter      sync.RWMutex
+	lockBackground          sync.RWMutex
+	lockHandleForm          sync.RWMutex
+	lockHandlePrompt        sync.RWMutex
+	lockLogExporter         sync.RWMutex
+	lockMetricExporter      sync.RWMutex
+	lockOpts                sync.RWMutex
+	lockRegisterPostRunHook sync.RWMutex
+	lockRevealAllSpans      sync.RWMutex
+	lockRun                 sync.RWMutex
+	lockSetClient           sync.RWMutex
+	lockSetCloudURL         sync.RWMutex
+	lockSetPrimary          sync.RWMutex
+	lockSetSidebarContent   sync.RWMutex
+	lockSetVerbosity        sync.RWMutex
+	lockShell               sync.RWMutex
+	lockSpanExporter        sync.RWMutex
 }
 
 // Background calls BackgroundFunc.
@@ -424,6 +438,38 @@ func (mock *FrontendMock) OptsCalls() []struct {
 	mock.lockOpts.RLock()
 	calls = mock.calls.Opts
 	mock.lockOpts.RUnlock()
+	return calls
+}
+
+// RegisterPostRunHook calls RegisterPostRunHookFunc.
+func (mock *FrontendMock) RegisterPostRunHook(f func(*dagui.DB, io.Writer)) {
+	if mock.RegisterPostRunHookFunc == nil {
+		panic("FrontendMock.RegisterPostRunHookFunc: method is nil but Frontend.RegisterPostRunHook was just called")
+	}
+	callInfo := struct {
+		F func(*dagui.DB, io.Writer)
+	}{
+		F: f,
+	}
+	mock.lockRegisterPostRunHook.Lock()
+	mock.calls.RegisterPostRunHook = append(mock.calls.RegisterPostRunHook, callInfo)
+	mock.lockRegisterPostRunHook.Unlock()
+	mock.RegisterPostRunHookFunc(f)
+}
+
+// RegisterPostRunHookCalls gets all the calls that were made to RegisterPostRunHook.
+// Check the length with:
+//
+//	len(mockedFrontend.RegisterPostRunHookCalls())
+func (mock *FrontendMock) RegisterPostRunHookCalls() []struct {
+	F func(*dagui.DB, io.Writer)
+} {
+	var calls []struct {
+		F func(*dagui.DB, io.Writer)
+	}
+	mock.lockRegisterPostRunHook.RLock()
+	calls = mock.calls.RegisterPostRunHook
+	mock.lockRegisterPostRunHook.RUnlock()
 	return calls
 }
 

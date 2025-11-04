@@ -24,15 +24,24 @@ type parallelJobs struct {
 }
 
 type Job struct {
-	Name string
-	Func JobFunc
+	Name       string
+	Func       JobFunc
+	attributes []attribute.KeyValue
 }
 
 type JobFunc func(context.Context) error
 
 func (p parallelJobs) WithJob(name string, fn JobFunc) parallelJobs {
+	return p.withJob(name, fn)
+}
+
+func (p parallelJobs) WithCheck(name string, fn JobFunc) parallelJobs {
+	return p.withJob(name, fn, attribute.String("dagger.io/check.name", name))
+}
+
+func (p parallelJobs) withJob(name string, fn JobFunc, attributes ...attribute.KeyValue) parallelJobs {
 	p = p.Clone()
-	p.Jobs = append(p.Jobs, Job{name, fn})
+	p.Jobs = append(p.Jobs, Job{name, fn, attributes})
 	return p
 }
 
@@ -42,13 +51,12 @@ func (p parallelJobs) Clone() parallelJobs {
 	return cp
 }
 
-func startSpan(ctx context.Context, name string) (context.Context, trace.Span) {
-	attr := []attribute.KeyValue{
-		attribute.Bool("dagger.io/ui.reveal", true),
-	}
+func (job Job) startSpan(ctx context.Context) (context.Context, trace.Span) {
+	attr := job.attributes
+	attr = append(attr, attribute.Bool("dagger.io/ui.reveal", true))
 	return trace.SpanFromContext(ctx).TracerProvider().
 		Tracer("dagger.io/util/parallel").
-		Start(ctx, name, trace.WithAttributes(attr...))
+		Start(ctx, job.Name, trace.WithAttributes(attr...))
 }
 
 func (job Job) Runner(ctx context.Context) func() error {
@@ -58,7 +66,7 @@ func (job Job) Runner(ctx context.Context) func() error {
 	// If we start the span before the job runs, the pros and cons are switched.
 	// The clean solution is to reimplement errgroup.Group to get our cake and eat it too.
 	return func() error {
-		ctx, span := startSpan(ctx, job.Name)
+		ctx, span := job.startSpan(ctx)
 		defer span.End()
 		if job.Func == nil {
 			return nil

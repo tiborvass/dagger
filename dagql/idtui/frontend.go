@@ -101,6 +101,10 @@ type Frontend interface {
 	// Populate the sidebar with content.
 	SetSidebarContent(SidebarSection)
 
+	// RegisterPostRunHook registers a function to be called after execution completes
+	// The hook receives the telemetry database and a safe writer for output
+	RegisterPostRunHook(func(*dagui.DB, io.Writer))
+
 	prompt.PromptHandler
 }
 
