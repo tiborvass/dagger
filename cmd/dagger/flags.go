@@ -103,6 +103,10 @@ func GetCustomFlagValueSlice(name string, defVal []string) (DaggerValue, error) 
 	case Socket:
 		v := &sliceValue[*socketValue]{}
 		return v.SetDefault(defVal)
+	case CheckGroup:
+		// CheckGroup has the same format as ModuleSource
+		v := &sliceValue[*moduleSourceValue]{}
+		return v.SetDefault(defVal)
 	}
 	return nil, nil
 }
