@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -37,6 +38,9 @@ type frontendPlain struct {
 	// db stores info about all the spans
 	db   *dagui.DB
 	data map[dagui.SpanID]*spanData
+
+	// Post-run hooks to call after execution completes
+	postRunHooks []func(*dagui.DB, io.Writer)
 
 	// idx is an incrementing counter to assign human-readable names to spans
 	idx uint
@@ -125,6 +129,13 @@ func NewPlain(w io.Writer) Frontend {
 	}
 }
 
+// RegisterPostRunHook registers a function to be called after execution completes
+func (fe *frontendPlain) RegisterPostRunHook(hook func(*dagui.DB, io.Writer)) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.postRunHooks = append(fe.postRunHooks, hook)
+}
+
 func (fe *frontendPlain) SetSidebarContent(SidebarSection) {}
 
 func (fe *frontendPlain) Shell(ctx context.Context, handler ShellHandler) {
@@ -206,7 +217,22 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 		runErr = errors.Join(runErr, cleanup())
 	}
 
-	fe.finalRender()
+	// Call post-run hooks if registered
+	if len(fe.postRunHooks) > 0 {
+		fe.mu.Lock()
+		hooks := make([]func(*dagui.DB, io.Writer), len(fe.postRunHooks))
+		copy(hooks, fe.postRunHooks)
+		db := fe.db
+		fe.mu.Unlock()
+
+		for _, hook := range hooks {
+			if hook != nil && db != nil {
+				hook(db, os.Stdout)
+			}
+		}
+	} else {
+		fe.finalRender()
+	}
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 

@@ -29,14 +29,15 @@ import (
 )
 
 type frontendDots struct {
-	profile     termenv.Profile
-	out         TermOutput
-	mu          sync.Mutex
-	db          *dagui.DB
-	opts        dagui.FrontendOpts
-	reporter    *frontendPretty
-	prefixW     *multiprefixw.Writer
-	pendingLogs map[dagui.SpanID][]sdklog.Record
+	profile      termenv.Profile
+	out          TermOutput
+	mu           sync.Mutex
+	db           *dagui.DB
+	opts         dagui.FrontendOpts
+	reporter     *frontendPretty
+	prefixW      *multiprefixw.Writer
+	pendingLogs  map[dagui.SpanID][]sdklog.Record
+	postRunHooks []func(*dagui.DB, io.Writer)
 }
 
 // NewDots creates a new dots-style frontend that outputs green dots for
@@ -77,10 +78,30 @@ func (fe *frontendDots) SetClient(client *dagger.Client) {}
 
 func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
 
+func (fe *frontendDots) RegisterPostRunHook(hook func(*dagui.DB, io.Writer)) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.postRunHooks = append(fe.postRunHooks, hook)
+}
+
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
 	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cleanup, err := f(ctx)
+
+		// Run post-run hooks
+		fe.mu.Lock()
+		hooks := make([]func(*dagui.DB, io.Writer), len(fe.postRunHooks))
+		copy(hooks, fe.postRunHooks)
+		db := fe.db
+		fe.mu.Unlock()
+
+		for _, hook := range hooks {
+			if hook != nil && db != nil {
+				hook(db, os.Stdout)
+			}
+		}
+
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
 		return cleanup, err

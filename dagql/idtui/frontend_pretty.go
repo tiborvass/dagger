@@ -56,6 +56,9 @@ type frontendPretty struct {
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
 
+	// Post-run hooks to call after execution completes
+	postRunHooks []func(*dagui.DB, io.Writer)
+
 	// updated by Run
 	program     *tea.Program
 	run         func(context.Context) (cleanups.CleanupF, error)
@@ -166,6 +169,13 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		sidebarBuf: new(strings.Builder),
 		writer:     w,
 	}
+}
+
+// RegisterPostRunHook registers a function to be called after execution completes
+func (fe *frontendPretty) RegisterPostRunHook(hook func(*dagui.DB, io.Writer)) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.postRunHooks = append(fe.postRunHooks, hook)
 }
 
 func (fe *frontendPretty) SetSidebarContent(section SidebarSection) {
@@ -343,9 +353,24 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		}
 	}
 
-	// print the final output display to stderr
-	if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
-		return renderErr
+	if len(fe.postRunHooks) > 0 {
+		fe.mu.Lock()
+		hooks := make([]func(*dagui.DB, io.Writer), len(fe.postRunHooks))
+		copy(hooks, fe.postRunHooks)
+		db := fe.db
+		fe.mu.Unlock()
+
+		for _, hook := range hooks {
+			if hook != nil && db != nil {
+				hook(db, os.Stdout)
+			}
+		}
+	} else {
+		// print the final output display to stderr
+		// FIXME: this is essentially the default post-run hook
+		if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
+			return renderErr
+		}
 	}
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)

@@ -48,6 +48,9 @@ Examples:
 			if checksListMode {
 				return listChecks(ctx, checks, cmd)
 			}
+			if Frontend != nil {
+				Frontend.RegisterPostRunHook(NewCheckLogRenderer().RenderHook())
+			}
 			return runChecks(ctx, checks, cmd)
 		})
 	},
@@ -158,7 +161,7 @@ func runChecks(ctx context.Context, checkgroup *dagger.CheckGroup, cmd *cobra.Co
 		termenv.String("Result").Bold(),
 	)
 	for _, check := range info.Checks {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, check.Emoji)
+		fmt.Fprintf(tw, "%s\t%s\n", check.Name, check.Emoji)
 	}
 	return tw.Flush()
 }
