@@ -53,6 +53,7 @@ const (
 	Socket        string = "Socket"
 	GitRepository string = "GitRepository"
 	GitRef        string = "GitRef"
+	CheckGroup    string = "CheckGroup"
 )
 
 var (
