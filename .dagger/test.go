@@ -40,7 +40,7 @@ func (t *Test) All(
 	envFile *dagger.Secret,
 	// +optional
 	testVerbose bool,
-) (MyCheckStatus, error) {
+) (MyChkStatus, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return CheckCompleted, err
@@ -164,7 +164,7 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-) (MyCheckStatus, error) {
+) (MyChkStatus, error) {
 	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return CheckCompleted, err

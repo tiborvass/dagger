@@ -21,14 +21,14 @@ type Scripts struct {
 }
 
 // ShellCheck scripts files
-func (s Scripts) LintSh(ctx context.Context) (MyCheckStatus, error) {
+func (s Scripts) LintSh(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, dag.Shellcheck().
 		Check(s.Dagger.Source.File("install.sh")).
 		Assert(ctx)
 }
 
 // LintPowershell scripts files
-func (s Scripts) LintPowershell(ctx context.Context) (MyCheckStatus, error) {
+func (s Scripts) LintPowershell(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, dag.PsAnalyzer().
 		Check(s.Dagger.Source.File("install.ps1"), dagger.PsAnalyzerCheckOpts{
 			// Exclude the unused parameters for now due because PSScriptAnalyzer treat
@@ -40,7 +40,7 @@ func (s Scripts) LintPowershell(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Test install scripts
-func (s Scripts) Test(ctx context.Context) (MyCheckStatus, error) {
+func (s Scripts) Test(ctx context.Context) (MyChkStatus, error) {
 	ctr := dag.Alpine(
 		dagger.AlpineOpts{
 			Packages: []string{"curl"},

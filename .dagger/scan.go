@@ -9,7 +9,7 @@ import (
 
 // Scan source code and artifacts for security vulnerabilities
 // +cache="session"
-func (dev *DaggerDev) Scan(ctx context.Context) (MyCheckStatus, error) {
+func (dev *DaggerDev) Scan(ctx context.Context) (MyChkStatus, error) {
 	ignoreFiles := dag.Directory().WithDirectory("/", dev.Source, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",

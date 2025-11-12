@@ -63,7 +63,7 @@ var knownBrokenModules = []string{
 
 // Lint the Go codebase
 // TODO: remove when go is installed as a toolchain
-func (g *GoToolchain) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (g *GoToolchain) Lint(ctx context.Context) (MyChkStatus, error) {
 	_, err := g.Go.Lint(ctx, dagger.GoLintOpts{
 		Exclude: knownBrokenModules,
 	})
@@ -72,7 +72,7 @@ func (g *GoToolchain) Lint(ctx context.Context) (MyCheckStatus, error) {
 
 // CheckTidy checks that go modules have up-to-date go.mod and go.sum
 // TODO: remove when go is installed as a toolchain
-func (g *GoToolchain) CheckTidy(ctx context.Context) (MyCheckStatus, error) {
+func (g *GoToolchain) CheckTidy(ctx context.Context) (MyChkStatus, error) {
 	_, err := g.Go.CheckTidy(ctx, dagger.GoCheckTidyOpts{
 		Exclude: knownBrokenModules,
 	})

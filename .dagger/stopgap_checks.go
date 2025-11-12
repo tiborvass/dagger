@@ -7,11 +7,11 @@ import (
 )
 
 // This file contains temporary code, to be removed once 'dagger checks' is merged and released.
-type MyCheckStatus string
+type MyChkStatus string
 
 const (
-	CheckCompleted MyCheckStatus = "COMPLETED"
-	CheckSkipped   MyCheckStatus = "SKIPPED"
+	CheckCompleted MyChkStatus = "COMPLETED"
+	CheckSkipped   MyChkStatus = "SKIPPED"
 )
 
 // Lint docs, helm chart and install scripts
@@ -31,7 +31,7 @@ func (dev *DaggerDev) LintMisc(ctx context.Context) error {
 }
 
 // DryRun performs a dry run of the release process
-func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, parallel.New().
 		WithJob("Helm chart", func(ctx context.Context) error {
 			_, err := dag.Helm().ReleaseDryRun(ctx)
@@ -52,7 +52,7 @@ func (dev *DaggerDev) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) 
 func (dev *DaggerDev) dryRunSDKs(ctx context.Context) error {
 	type releaseDryRunner interface {
 		Name() string
-		ReleaseDryRun(context.Context) (MyCheckStatus, error)
+		ReleaseDryRun(context.Context) (MyChkStatus, error)
 	}
 	jobs := parallel.New()
 	for _, sdk := range allSDKs[releaseDryRunner](dev) {
@@ -70,7 +70,7 @@ func (dev *DaggerDev) TestSDKs(ctx context.Context) error {
 	jobs := parallel.New()
 	type tester interface {
 		Name() string
-		Test(context.Context) (MyCheckStatus, error)
+		Test(context.Context) (MyChkStatus, error)
 	}
 	for _, sdk := range allSDKs[tester](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {
@@ -95,7 +95,7 @@ func (dev *DaggerDev) LintSDKs(ctx context.Context) error {
 	jobs := parallel.New()
 	type linter interface {
 		Name() string
-		Lint(context.Context) (MyCheckStatus, error)
+		Lint(context.Context) (MyChkStatus, error)
 	}
 	for _, sdk := range allSDKs[linter](dev) {
 		jobs = jobs.WithJob(sdk.Name(), func(ctx context.Context) error {

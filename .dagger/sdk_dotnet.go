@@ -14,11 +14,11 @@ type DotnetSDK struct {
 func (t DotnetSDK) Name() string {
 	return "dotnet"
 }
-func (t DotnetSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (t DotnetSDK) Lint(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, dag.DotnetSDKDev().Lint(ctx)
 }
 
-func (t DotnetSDK) Test(ctx context.Context) (MyCheckStatus, error) {
+func (t DotnetSDK) Test(ctx context.Context) (MyChkStatus, error) {
 	src := t.Dagger.Source.Directory("sdk/dotnet")
 	return CheckCompleted, dag.
 		DotnetSDKDev(dagger.DotnetSDKDevOpts{Source: src}).

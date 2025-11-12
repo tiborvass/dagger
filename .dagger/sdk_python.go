@@ -18,7 +18,7 @@ func (t PythonSDK) Name() string {
 }
 
 // CheckPythonFormat checks the Python code formatting
-func (t PythonSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (t PythonSDK) Lint(ctx context.Context) (MyChkStatus, error) {
 	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
 	_, err := dag.PythonSDKDev().
 		WithDirectory(
@@ -39,7 +39,7 @@ func (t PythonSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Test the Python SDK
-func (t PythonSDK) Test(ctx context.Context) (MyCheckStatus, error) {
+func (t PythonSDK) Test(ctx context.Context) (MyChkStatus, error) {
 	base := dag.PythonSDKDev().Container().With(t.Dagger.devEngineSidecar())
 	dev := dag.PythonSDKDev(dagger.PythonSDKDevOpts{Container: base})
 
@@ -113,7 +113,7 @@ func (t PythonSDK) Generate(_ context.Context) (*dagger.Changeset, error) {
 }
 
 // Test the publishing process
-func (t PythonSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (t PythonSDK) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, t.Publish(ctx, "HEAD", true, "", nil)
 }
 

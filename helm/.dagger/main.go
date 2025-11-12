@@ -28,7 +28,7 @@ type Helm struct {
 }
 
 // Lint the helm chart
-func (h *Helm) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (h *Helm) Lint(ctx context.Context) (MyChkStatus, error) {
 	_, err := h.chart().
 		WithExec([]string{"helm", "lint"}).
 		WithExec([]string{"helm", "lint", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
@@ -39,7 +39,7 @@ func (h *Helm) Lint(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Test the helm chart on an ephemeral K3S service
-func (h *Helm) Test(ctx context.Context) (MyCheckStatus, error) {
+func (h *Helm) Test(ctx context.Context) (MyChkStatus, error) {
 	k3s := dag.K3S("helm-test")
 	// NOTE: force starting here - without this, the config won't be generated
 	k3ssvc, err := k3s.Server().Start(ctx)
@@ -237,7 +237,7 @@ func (h *Helm) SetVersion(
 	return updatedChartYaml, nil
 }
 
-func (h *Helm) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (h *Helm) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, h.Publish(ctx,
 		"main", // target
 		nil,    // githubToken

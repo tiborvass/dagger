@@ -77,7 +77,7 @@ func (d Docs) Server() *dagger.Container {
 }
 
 // Lint documentation files
-func (d Docs) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (d Docs) Lint(ctx context.Context) (MyChkStatus, error) {
 	_, err := dag.Container().
 		From("tmknom/markdownlint:"+markdownlintVersion).
 		WithMountedDirectory("/src", d.Source).

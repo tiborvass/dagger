@@ -15,7 +15,7 @@ func (dev *DaggerDev) Docs() *Docs {
 type Docs struct{}
 
 // Lint the documentation
-func (d *Docs) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (d *Docs) Lint(ctx context.Context) (MyChkStatus, error) {
 	_, err := dag.DaggerDocs().Lint(ctx)
 	return CheckCompleted, err
 }

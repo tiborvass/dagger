@@ -28,14 +28,14 @@ func (t TypescriptSDK) Name() string {
 }
 
 // CheckTypescriptFormat checks the formatting of the Typescript SDK code
-func (t TypescriptSDK) LintTypescript(ctx context.Context) (MyCheckStatus, error) {
+func (t TypescriptSDK) LintTypescript(ctx context.Context) (MyChkStatus, error) {
 	base := t.nodeJsBase()
 	_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
 	return CheckCompleted, err
 }
 
 // CheckDocsSnippetsFormat checks the formatting of Typescript snippets in the docs
-func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) (MyCheckStatus, error) {
+func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) (MyChkStatus, error) {
 	base := t.nodeJsBase()
 	path := "docs/current_docs"
 	_, err := base.
@@ -58,7 +58,7 @@ func (t TypescriptSDK) LintDocsSnippets(ctx context.Context) (MyCheckStatus, err
 	return CheckCompleted, err
 }
 
-func (t TypescriptSDK) TestNode(ctx context.Context) (MyCheckStatus, error) {
+func (t TypescriptSDK) TestNode(ctx context.Context) (MyChkStatus, error) {
 	jobs := parallel.New()
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
@@ -77,7 +77,7 @@ func (t TypescriptSDK) TestNode(ctx context.Context) (MyCheckStatus, error) {
 	}
 	return CheckCompleted, jobs.Run(ctx)
 }
-func (t TypescriptSDK) TestBun(ctx context.Context) (MyCheckStatus, error) {
+func (t TypescriptSDK) TestBun(ctx context.Context) (MyChkStatus, error) {
 	jobs := parallel.New()
 	jobs = jobs.WithJob(
 		fmt.Sprintf("test with bun version %s", bunVersion),
@@ -113,7 +113,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Changeset, error) 
 }
 
 // Test the publishing process
-func (t TypescriptSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (t TypescriptSDK) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, t.Publish(ctx, "HEAD", true, nil)
 }
 

@@ -25,7 +25,7 @@ func (t JavaSDK) Name() string {
 }
 
 // Lint the Java SDK
-func (t JavaSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (t JavaSDK) Lint(ctx context.Context) (MyChkStatus, error) {
 	_, err := t.Maven(ctx).
 		WithExec([]string{"mvn", "fmt:check"}).
 		Sync(ctx)
@@ -33,7 +33,7 @@ func (t JavaSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
 }
 
 // Test the Java SDK
-func (t JavaSDK) Test(ctx context.Context) (MyCheckStatus, error) {
+func (t JavaSDK) Test(ctx context.Context) (MyChkStatus, error) {
 	_, err := t.Maven(ctx).
 		With(t.Dagger.devEngineSidecar()).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).

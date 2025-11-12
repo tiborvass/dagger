@@ -11,7 +11,7 @@ import (
 // selected for maximum coverage of Dagger features with limited compute expenditure.
 // The actual checks being performed is an implementation detail, and should NOT be relied on.
 // In other words, don't skip running <foo> just because it happens to be run here!
-func (dev *DaggerDev) CiInCi(ctx context.Context) (MyCheckStatus, error) {
+func (dev *DaggerDev) CiInCi(ctx context.Context) (MyChkStatus, error) {
 	ctr, err := dev.Playground(ctx, nil, false, false)
 	if err != nil {
 		return CheckCompleted, err

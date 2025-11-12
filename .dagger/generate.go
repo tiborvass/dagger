@@ -10,7 +10,7 @@ import (
 )
 
 // Verify that generated code is up to date
-func (dev *DaggerDev) CheckGenerated(ctx context.Context) (MyCheckStatus, error) {
+func (dev *DaggerDev) CheckGenerated(ctx context.Context) (MyChkStatus, error) {
 	_, err := dev.Generate(ctx, true)
 	return CheckCompleted, err
 }

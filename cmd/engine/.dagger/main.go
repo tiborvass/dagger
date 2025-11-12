@@ -264,7 +264,7 @@ type targetResult struct {
 	Tags      []string
 }
 
-func (e *DaggerEngine) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (e *DaggerEngine) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, e.Publish(
 		ctx,
 		"dagger-engine.dev", // image

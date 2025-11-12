@@ -1,9 +1,9 @@
 package main
 
-// FIXME: stopgap until core API defines MyCheckStatus
-type MyCheckStatus string
+// FIXME: stopgap until core API defines MyChkStatus
+type MyChkStatus string
 
 const (
-	CheckCompleted MyCheckStatus = "COMPLETED"
-	CheckSkipped   MyCheckStatus = "SKIPPED"
+	CheckCompleted MyChkStatus = "COMPLETED"
+	CheckSkipped   MyChkStatus = "SKIPPED"
 )

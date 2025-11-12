@@ -32,7 +32,7 @@ func (t GoSDK) Source() *dagger.Directory {
 }
 
 // Test the Go SDK
-func (t GoSDK) Test(ctx context.Context) (MyCheckStatus, error) {
+func (t GoSDK) Test(ctx context.Context) (MyChkStatus, error) {
 	// FIXME: merge into common go toolchain
 	_, err := t.DevContainer().
 		WithExec([]string{"go", "test", "-v", "-skip=TestProvision", "./..."}).
@@ -58,7 +58,7 @@ func (t GoSDK) Generate(ctx context.Context) (*dagger.Changeset, error) {
 }
 
 // Test the release
-func (t GoSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (t GoSDK) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, t.Publish(
 		ctx,
 		"HEAD",

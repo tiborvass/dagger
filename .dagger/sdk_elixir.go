@@ -20,12 +20,12 @@ func (t ElixirSDK) Name() string {
 }
 
 // Lint the Elixir SDK
-func (t ElixirSDK) Lint(ctx context.Context) (MyCheckStatus, error) {
+func (t ElixirSDK) Lint(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, t.native().Lint(ctx)
 }
 
 // Test the Elixir SDK
-func (t ElixirSDK) Test(ctx context.Context) (MyCheckStatus, error) {
+func (t ElixirSDK) Test(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, t.native().Test(ctx)
 }
 
@@ -39,7 +39,7 @@ func (t ElixirSDK) Generate(_ context.Context) (*dagger.Changeset, error) {
 }
 
 // Test the publishing process
-func (t ElixirSDK) ReleaseDryRun(ctx context.Context) (MyCheckStatus, error) {
+func (t ElixirSDK) ReleaseDryRun(ctx context.Context) (MyChkStatus, error) {
 	return CheckCompleted, t.Publish(ctx, "HEAD", true, nil)
 }
 
