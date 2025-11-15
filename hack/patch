@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -xeuo pipefail
+
+serverArch=$(docker version | awk '/Server:/ { s=1 } /Arch:/ { if (s) { print $2} }')
+goarch=$(echo "$serverArch" | cut -d/ -f2)
+
+version=$(git rev-parse --short HEAD)
+if [[ -n "$(git status --porcelain)" ]]; then
+    version=${version}-dirty
+fi
+go build -ldflags="-X github.com/dagger/dagger/engine.Version=$version" -o ./bin/dagger ./cmd/dagger &
+GOOS=linux GOARCH=$goarch go build -ldflags="-X github.com/dagger/dagger/engine.Version=$version" -o ./bin/dagger-engine-linux ./cmd/engine
+docker cp ./bin/dagger-engine-linux dagger-engine.dev:/usr/local/bin/dagger-engine
+wait
+docker restart dagger-engine.dev
