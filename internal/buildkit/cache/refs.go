@@ -1190,6 +1190,7 @@ func makeTmpLabelsStargzMode(labels map[string]string, s session.Group) (fields 
 }
 
 func (sr *immutableRef) unlazy(ctx context.Context, dhs DescHandlers, pg progress.Controller, s session.Group, topLevel bool, ensureContentStore bool) error {
+	fmt.Println("🐞 unlazy", sr.GetDescription())
 	_, err := g.Do(ctx, sr.ID()+"-unlazy", func(ctx context.Context) (_ *leaseutil.LeaseRef, rerr error) {
 		if _, err := sr.cm.Snapshotter.Stat(ctx, sr.getSnapshotID()); err == nil {
 			if !ensureContentStore {
