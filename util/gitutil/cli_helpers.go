@@ -3,6 +3,7 @@ package gitutil
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"slices"
 )
 
@@ -30,6 +31,7 @@ func (cli *GitCLI) WorkTree(ctx context.Context) (string, error) {
 }
 
 func (cli *GitCLI) GitDir(ctx context.Context) (string, error) {
+	fmt.Println("🐞cli.gitDir", cli.gitDir)
 	if cli.gitDir != "" {
 		return cli.gitDir, nil
 	}

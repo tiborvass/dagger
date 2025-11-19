@@ -2,11 +2,13 @@ package snapshot
 
 import (
 	"context"
+	"fmt"
 	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/mount"
@@ -586,6 +588,7 @@ func differFor(lowerMntable, upperMntable Mountable) (_ *differ, rerr error) {
 }
 
 func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context, *change) error) error {
+	fmt.Println("🐞 HandleChanges", d.upperdir != "")
 	if d.upperdir != "" {
 		return d.overlayChanges(ctx, handle)
 	}
@@ -594,6 +597,12 @@ func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context,
 
 func (d *differ) doubleWalkingChanges(ctx context.Context, handle func(context.Context, *change) error) error {
 	return fs.Changes(ctx, d.lowerRoot, d.upperRoot, func(kind fs.ChangeKind, subPath string, srcfi os.FileInfo, prevErr error) error {
+		modTime := time.Time{}
+		if srcfi != nil {
+			modTime = srcfi.ModTime()
+		}
+		// fmt.Println("🐞", kind, "☯️ ", subPath, "☯️ ", modTime)
+		_ = modTime
 		if prevErr != nil {
 			return prevErr
 		}

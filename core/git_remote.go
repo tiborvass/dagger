@@ -566,7 +566,29 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
-			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
+			if err := doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir); err != nil {
+				return err
+			}
+
+			/*
+				gitDir, err := checkoutGit.GitDir(ctx)
+				if err != nil {
+					return err
+				}
+				err = filepath.WalkDir(filepath.Dir(gitDir), func(path string, d fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					err = os.Chtimes(path, time.Time{}, time.Time{})
+					if err != nil {
+						fmt.Println("🐞chtimes", path, err)
+					}
+					return nil
+				})
+				fmt.Println("🐞walkdir", gitDir, err)
+			*/
+
+			return err
 		})
 		if err != nil {
 			return fmt.Errorf("failed to checkout %s in %s: %w", ref.Name, ref.repo.URL.Remote(), err)

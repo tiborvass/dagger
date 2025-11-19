@@ -230,6 +230,7 @@ func (cli *GitCLI) Run(ctx context.Context, args ...string) (_ []byte, rerr erro
 	if cmd.Dir == "" {
 		cmd.Dir = cli.workTree
 	}
+	fmt.Println("🐞gitCli.Dir", cmd.Dir)
 
 	// Block sneaky repositories from using repos from the filesystem as submodules.
 	cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")

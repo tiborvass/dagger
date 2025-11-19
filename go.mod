@@ -361,4 +361,6 @@ replace (
 	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.14.0
 )
 
+replace github.com/containerd/continuity => ./continuity
+
 tool github.com/matryer/moq
