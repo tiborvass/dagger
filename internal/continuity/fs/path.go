@@ -27,32 +27,32 @@ import (
 
 var errTooManyLinks = errors.New("too many links")
 
-type currentPath struct {
-	path     string
-	f        os.FileInfo
-	fullPath string
+type File struct {
+	Path     string
+	FullPath string
+	os.FileInfo
 }
 
-func pathChange(lower, upper *currentPath) (ChangeKind, string) {
+func pathChange(lower, upper *File) (ChangeKind, string) {
 	if lower == nil {
 		if upper == nil {
 			panic("cannot compare nil paths")
 		}
-		return ChangeKindAdd, upper.path
+		return ChangeKindAdd, upper.Path
 	}
 	if upper == nil {
-		return ChangeKindDelete, lower.path
+		return ChangeKindDelete, lower.Path
 	}
 
-	switch i := directoryCompare(lower.path, upper.path); {
+	switch i := directoryCompare(lower.Path, upper.Path); {
 	case i < 0:
 		// File in lower that is not in upper
-		return ChangeKindDelete, lower.path
+		return ChangeKindDelete, lower.Path
 	case i > 0:
 		// File in upper that is not in lower
-		return ChangeKindAdd, upper.path
+		return ChangeKindAdd, upper.Path
 	default:
-		return ChangeKindModify, upper.path
+		return ChangeKindModify, upper.Path
 	}
 }
 
@@ -85,27 +85,28 @@ func directoryCompare(a, b string) int {
 	return 0
 }
 
-func sameFile(f1, f2 *currentPath) (bool, error) {
-	if os.SameFile(f1.f, f2.f) {
+// SameFile || !SysStat || !Capabilities || IsDir || !Size || !Unix || !UnixNano || Symlink || ZeroSize || Content
+func sameFile(f1, f2 *File) (bool, error) {
+	if os.SameFile(f1.FileInfo, f2.FileInfo) {
 		return true, nil
 	}
 
-	equalStat, err := compareSysStat(f1.f.Sys(), f2.f.Sys())
+	equalStat, err := CompareSysStat(f1, f2)
 	if err != nil || !equalStat {
 		return equalStat, err
 	}
 
-	if eq, err := compareCapabilities(f1.fullPath, f2.fullPath); err != nil || !eq {
+	if eq, err := CompareCapabilities(f1, f2); err != nil || !eq {
 		return eq, err
 	}
 
 	// If not a directory also check size, modtime, and content
-	if !f1.f.IsDir() {
-		if f1.f.Size() != f2.f.Size() {
+	if !f1.IsDir() {
+		if f1.Size() != f2.Size() {
 			return false, nil
 		}
-		t1 := f1.f.ModTime()
-		t2 := f2.f.ModTime()
+		t1 := f1.ModTime()
+		t2 := f2.ModTime()
 
 		if t1.Unix() != t2.Unix() {
 			return false, nil
@@ -114,13 +115,13 @@ func sameFile(f1, f2 *currentPath) (bool, error) {
 		// If the timestamp may have been truncated in both of the
 		// files, check content of file to determine difference
 		if t1.Nanosecond() == 0 && t2.Nanosecond() == 0 {
-			if (f1.f.Mode() & os.ModeSymlink) == os.ModeSymlink {
-				return compareSymlinkTarget(f1.fullPath, f2.fullPath)
+			if (f1.Mode() & os.ModeSymlink) == os.ModeSymlink {
+				return compareSymlinkTarget(f1.FullPath, f2.FullPath)
 			}
-			if f1.f.Size() == 0 { // if file sizes are zero length, the files are the same by definition
+			if f1.Size() == 0 { // if file sizes are zero length, the files are the same by definition
 				return true, nil
 			}
-			return compareFileContent(f1.fullPath, f2.fullPath)
+			return SameFileContent(f1, f2)
 		} else if t1.Nanosecond() != t2.Nanosecond() {
 			return false, nil
 		}
@@ -143,28 +144,29 @@ func compareSymlinkTarget(p1, p2 string) (bool, error) {
 
 const compareChuckSize = 32 * 1024
 
-// compareFileContent compares the content of 2 same sized files
+// SameFileContent compares the content of 2 same sized files
 // by comparing each byte.
-func compareFileContent(p1, p2 string) (bool, error) {
-	f1, err := os.Open(p1)
+func SameFileContent(f1, f2 *File) (bool, error) {
+	p1, p2 := f1.FullPath, f2.FullPath
+	osf1, err := os.Open(p1)
 	if err != nil {
 		return false, err
 	}
-	defer f1.Close()
-	f2, err := os.Open(p2)
+	defer osf1.Close()
+	osf2, err := os.Open(p2)
 	if err != nil {
 		return false, err
 	}
-	defer f2.Close()
+	defer osf2.Close()
 
 	b1 := make([]byte, compareChuckSize)
 	b2 := make([]byte, compareChuckSize)
 	for {
-		n1, err1 := f1.Read(b1)
+		n1, err1 := osf1.Read(b1)
 		if err1 != nil && err1 != io.EOF {
 			return false, err1
 		}
-		n2, err2 := f2.Read(b2)
+		n2, err2 := osf2.Read(b2)
 		if err2 != nil && err2 != io.EOF {
 			return false, err2
 		}
@@ -177,7 +179,7 @@ func compareFileContent(p1, p2 string) (bool, error) {
 	}
 }
 
-func pathWalk(ctx context.Context, root string, pathC chan<- *currentPath) error {
+func pathWalk(ctx context.Context, root string, pathC chan<- *File) error {
 	return filepath.Walk(root, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -196,10 +198,10 @@ func pathWalk(ctx context.Context, root string, pathC chan<- *currentPath) error
 			return nil
 		}
 
-		p := &currentPath{
-			path:     path,
-			f:        f,
-			fullPath: filepath.Join(root, path),
+		p := &File{
+			path,
+			filepath.Join(root, path),
+			f,
 		}
 
 		select {
@@ -211,7 +213,7 @@ func pathWalk(ctx context.Context, root string, pathC chan<- *currentPath) error
 	})
 }
 
-func nextPath(ctx context.Context, pathC <-chan *currentPath) (*currentPath, error) {
+func nextPath(ctx context.Context, pathC <-chan *File) (*File, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

@@ -74,6 +74,10 @@ type Change struct {
 // computed during a directory changes calculation.
 type ChangeFunc func(ChangeKind, string, os.FileInfo, error) error
 
+// SameFileFunc is the type of function called to tell whether two *File
+// objects represent the same file.
+type SameFileFunc func(*File, *File) (bool, error)
+
 // Changes computes changes between two directories calling the
 // given change function for each computed change. The first
 // directory is intended to the base directory and second
@@ -100,13 +104,17 @@ type ChangeFunc func(ChangeKind, string, os.FileInfo, error) error
 // be considered unchanged if the content is the same. This behavior
 // is to account for timestamp truncation during archiving.
 func Changes(ctx context.Context, a, b string, changeFn ChangeFunc) error {
+	return Changes2(ctx, a, b, nil, changeFn)
+}
+
+func Changes2(ctx context.Context, a, b string, sameFileFn SameFileFunc, changeFn ChangeFunc) error {
 	if a == "" {
 		log.G(ctx).Debugf("Using single walk diff for %s", b)
 		return addDirChanges(ctx, changeFn, b)
 	}
 
 	log.G(ctx).Debugf("Using double walk diff for %s from %s", b, a)
-	return doubleWalkDiff(ctx, changeFn, a, b)
+	return doubleWalkDiff(ctx, sameFileFn, changeFn, a, b)
 }
 
 func addDirChanges(ctx context.Context, changeFn ChangeFunc, root string) error {
@@ -270,14 +278,14 @@ func DiffDirChanges(ctx context.Context, baseDir, diffDir string, source DiffSou
 }
 
 // doubleWalkDiff walks both directories to create a diff
-func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b string) (err error) {
+func doubleWalkDiff(ctx context.Context, sameFileFn SameFileFunc, changeFn ChangeFunc, a, b string) (err error) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	var (
-		c1 = make(chan *currentPath)
-		c2 = make(chan *currentPath)
+		c1 = make(chan *File)
+		c2 = make(chan *File)
 
-		f1, f2 *currentPath
+		f1, f2 *File
 		rmdir  string
 	)
 	g.Go(func() error {
@@ -320,31 +328,34 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b string) (err 
 				if rmdir != "" {
 					rmdir = ""
 				}
-				f = f2.f
+				f = f2.FileInfo
 				f2 = nil
 			case ChangeKindDelete:
 				// Check if this file is already removed by being
 				// under of a removed directory
-				if rmdir != "" && strings.HasPrefix(f1.path, rmdir) {
+				if rmdir != "" && strings.HasPrefix(f1.Path, rmdir) {
 					f1 = nil
 					continue
-				} else if f1.f.IsDir() {
-					rmdir = f1.path + string(os.PathSeparator)
+				} else if f1.IsDir() {
+					rmdir = f1.Path + string(os.PathSeparator)
 				} else if rmdir != "" {
 					rmdir = ""
 				}
 				f1 = nil
 			case ChangeKindModify:
-				same, err := sameFile(f1, f2)
+				if sameFileFn == nil {
+					sameFileFn = sameFile
+				}
+				same, err := sameFileFn(f1, f2)
 				if err != nil {
 					return err
 				}
-				if f1.f.IsDir() && !f2.f.IsDir() {
-					rmdir = f1.path + string(os.PathSeparator)
+				if f1.IsDir() && !f2.IsDir() {
+					rmdir = f1.Path + string(os.PathSeparator)
 				} else if rmdir != "" {
 					rmdir = ""
 				}
-				f = f2.f
+				f = f2.FileInfo
 				f1 = nil
 				f2 = nil
 				if same {

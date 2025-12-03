@@ -27,10 +27,11 @@ import (
 	"github.com/containerd/continuity/sysx"
 )
 
-// compareSysStat returns whether the stats are equivalent,
+// CompareSysStat returns whether the stats are equivalent,
 // whether the files are considered the same file, and
 // an error
-func compareSysStat(s1, s2 interface{}) (bool, error) {
+func CompareSysStat(f1, f2 *File) (bool, error) {
+	s1, s2 := f1.Sys(), f2.Sys()
 	ls1, ok := s1.(*syscall.Stat_t)
 	if !ok {
 		return false, nil
@@ -43,7 +44,8 @@ func compareSysStat(s1, s2 interface{}) (bool, error) {
 	return ls1.Mode == ls2.Mode && ls1.Uid == ls2.Uid && ls1.Gid == ls2.Gid && ls1.Rdev == ls2.Rdev, nil
 }
 
-func compareCapabilities(p1, p2 string) (bool, error) {
+func CompareCapabilities(f1, f2 *File) (bool, error) {
+	p1, p2 := f1.FullPath, f2.FullPath
 	c1, err := sysx.LGetxattr(p1, "security.capability")
 	if err != nil && err != sysx.ENODATA {
 		return false, fmt.Errorf("failed to get xattr for %s: %w", p1, err)
