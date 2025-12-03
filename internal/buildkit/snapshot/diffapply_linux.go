@@ -88,7 +88,7 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest Mountable, diffs
 		defer func() {
 			rerr = multierror.Append(rerr, d.Release()).ErrorOrNil()
 		}()
-		if err := d.HandleChanges(ctx, a.Apply); err != nil {
+		if err := d.HandleChanges(ctx, sameGitFile, a.Apply); err != nil {
 			return snapshots.Usage{}, errors.Wrapf(err, "failed to handle changes")
 		}
 	}
@@ -97,6 +97,29 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest Mountable, diffs
 		return snapshots.Usage{}, errors.Wrapf(err, "failed to flush changes")
 	}
 	return a.Usage()
+}
+
+func sameGitFile(f1, f2 *fs.File) (bool, error) {
+	if os.SameFile(f1.FileInfo, f2.FileInfo) {
+		return true, nil
+	}
+
+	equalStat, err := fs.CompareSysStat(f1, f2)
+	if err != nil || !equalStat {
+		return equalStat, err
+	}
+
+	if eq, err := fs.CompareCapabilities(f1, f2); err != nil || !eq {
+		return eq, err
+	}
+
+	if f1.IsDir() {
+		return true, nil
+	}
+	if f1.Size() != f2.Size() {
+		return false, nil
+	}
+	return fs.SameFileContent(f1, f2)
 }
 
 type change struct {
@@ -587,16 +610,16 @@ func differFor(lowerMntable, upperMntable Mountable) (_ *differ, rerr error) {
 	return d, nil
 }
 
-func (d *differ) HandleChanges(ctx context.Context, handle func(context.Context, *change) error) error {
+func (d *differ) HandleChanges(ctx context.Context, sameFileFn fs.SameFileFunc, handle func(context.Context, *change) error) error {
 	fmt.Println("🐞 HandleChanges", d.upperdir != "")
 	if d.upperdir != "" {
 		return d.overlayChanges(ctx, handle)
 	}
-	return d.doubleWalkingChanges(ctx, handle)
+	return d.doubleWalkingChanges(ctx, sameFileFn, handle)
 }
 
-func (d *differ) doubleWalkingChanges(ctx context.Context, handle func(context.Context, *change) error) error {
-	return fs.Changes(ctx, d.lowerRoot, d.upperRoot, func(kind fs.ChangeKind, subPath string, srcfi os.FileInfo, prevErr error) error {
+func (d *differ) doubleWalkingChanges(ctx context.Context, sameFileFn fs.SameFileFunc, handle func(context.Context, *change) error) error {
+	return fs.Changes2(ctx, d.lowerRoot, d.upperRoot, sameFileFn, func(kind fs.ChangeKind, subPath string, srcfi os.FileInfo, prevErr error) error {
 		modTime := time.Time{}
 		if srcfi != nil {
 			modTime = srcfi.ModTime()
