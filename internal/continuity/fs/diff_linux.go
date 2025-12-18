@@ -23,8 +23,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/containerd/continuity/devices"
-	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/internal/continuity/devices"
+	"github.com/dagger/dagger/internal/continuity/sysx"
 
 	"golang.org/x/sys/unix"
 )

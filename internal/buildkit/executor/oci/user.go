@@ -8,7 +8,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/containers"
 	containerdoci "github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/moby/sys/user"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"

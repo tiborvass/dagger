@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/Netflix/go-expect"
-	"github.com/containerd/continuity/fs"
 	"github.com/creack/pty"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/muesli/termenv"
@@ -576,7 +576,7 @@ type Test struct {
 				WithMountedDirectory("/a_mnt", d1).
 				WithMountedCache("/cachemnt", dag.CacheVolume("somethingoranother")).
 				WithMountedDirectory("/z_mnt", d2).
-				WithExec([]string{"sh", "-c", 
+				WithExec([]string{"sh", "-c",
 					"echo breakpoint > /fail && echo FOOFOO > /a_mnt/foo && echo BARBAR > /z_mnt/bar && exit 42",
 				}),
 		}

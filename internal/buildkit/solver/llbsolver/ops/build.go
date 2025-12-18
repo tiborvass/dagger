@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	"github.com/dagger/dagger/internal/buildkit/frontend"
 	"github.com/dagger/dagger/internal/buildkit/session"
@@ -14,6 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/ops/opsutils"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )

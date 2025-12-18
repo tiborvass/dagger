@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/continuity/sysx"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkcontenthash "github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/continuity/sysx"
 	"github.com/dagger/dagger/internal/fsutil"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/fsutil/types"

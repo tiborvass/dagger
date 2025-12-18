@@ -25,9 +25,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/continuity/devices"
-	driverpkg "github.com/containerd/continuity/driver"
-	"github.com/containerd/continuity/pathdriver"
+	"github.com/dagger/dagger/internal/continuity/devices"
+	driverpkg "github.com/dagger/dagger/internal/continuity/driver"
+	"github.com/dagger/dagger/internal/continuity/pathdriver"
 
 	"github.com/opencontainers/go-digest"
 )

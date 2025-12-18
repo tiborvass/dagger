@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/llbsolver/ops/fileoptypes"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	copy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/pkg/errors"

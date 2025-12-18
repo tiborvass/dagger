@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
@@ -24,6 +23,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
+	containerdfs "github.com/dagger/dagger/internal/continuity/fs"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/moby/sys/user"
 	"github.com/opencontainers/go-digest"

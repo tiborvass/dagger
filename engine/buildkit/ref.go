@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/v2/core/leases"
-	"github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/cache/contenthash"
 	cacheutil "github.com/dagger/dagger/internal/buildkit/cache/util"
@@ -24,6 +23,7 @@ import (
 	solverresult "github.com/dagger/dagger/internal/buildkit/solver/result"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bkworker "github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/dagger/dagger/internal/fsutil"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"

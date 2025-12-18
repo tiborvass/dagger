@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/containerd/continuity"
+	"github.com/dagger/dagger/internal/continuity"
 )
 
 type resourceUpdate struct {

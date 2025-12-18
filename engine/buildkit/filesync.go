@@ -10,13 +10,13 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/containerd/continuity/fs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	bksolverpb "github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"github.com/dagger/dagger/engine"

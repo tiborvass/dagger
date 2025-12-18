@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
@@ -29,6 +28,7 @@ import (
 	bkmounts "github.com/dagger/dagger/internal/buildkit/solver/llbsolver/mounts"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	containerdfs "github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"

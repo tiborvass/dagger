@@ -8,9 +8,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/system"
+	"github.com/dagger/dagger/internal/continuity/fs"
 )
 
 func MountStubsCleaner(ctx context.Context, dir string, mounts []Mount, recursive bool) func() {

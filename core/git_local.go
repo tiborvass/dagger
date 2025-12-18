@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/dagger/dagger/util/gitutil"
 )
 

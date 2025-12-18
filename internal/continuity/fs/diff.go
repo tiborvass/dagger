@@ -23,13 +23,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/containerd/continuity/fs"
 	"github.com/containerd/log"
 	"golang.org/x/sync/errgroup"
 )
 
 // ChangeKind is the type of modification that
 // a change is making.
-type ChangeKind int
+type ChangeKind = fs.ChangeKind
 
 const (
 	// ChangeKindUnmodified represents an unmodified

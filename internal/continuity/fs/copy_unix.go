@@ -25,7 +25,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/internal/continuity/sysx"
 	"golang.org/x/sys/unix"
 )
 

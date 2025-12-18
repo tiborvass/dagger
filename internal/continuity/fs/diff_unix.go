@@ -24,7 +24,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/internal/continuity/sysx"
 )
 
 // CompareSysStat returns whether the stats are equivalent,

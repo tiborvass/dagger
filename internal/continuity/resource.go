@@ -23,7 +23,7 @@ import (
 	"reflect"
 	"sort"
 
-	pb "github.com/containerd/continuity/proto"
+	pb "github.com/dagger/dagger/internal/continuity/proto"
 	"github.com/opencontainers/go-digest"
 )
 

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/dagger/dagger/internal/fsutil"
 	"github.com/dagger/dagger/util/fsxutil"
 	"github.com/moby/patternmatcher"

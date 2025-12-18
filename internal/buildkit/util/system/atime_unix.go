@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/pkg/errors"
 )
 

@@ -20,8 +20,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/containerd/continuity/testutil"
-	"github.com/containerd/continuity/testutil/loopback"
+	"github.com/dagger/dagger/internal/continuity/testutil"
+	"github.com/dagger/dagger/internal/continuity/testutil/loopback"
 )
 
 func WithMkfs(t *testing.T, f func(), mkfs ...string) {

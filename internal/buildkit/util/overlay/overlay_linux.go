@@ -16,9 +16,9 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/pkg/archive"
-	"github.com/containerd/continuity/devices"
-	"github.com/containerd/continuity/fs"
-	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/internal/continuity/devices"
+	"github.com/dagger/dagger/internal/continuity/fs"
+	"github.com/dagger/dagger/internal/continuity/sysx"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )

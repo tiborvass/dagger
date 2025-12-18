@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/containerd/continuity"
+	"github.com/dagger/dagger/internal/continuity"
 )
 
 // CheckDirectoryEqual compares two directory paths to make sure that

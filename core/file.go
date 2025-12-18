@@ -17,12 +17,12 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/core/mount"
-	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/internal/buildkit/cache"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/client/llb"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	containerdfs "github.com/dagger/dagger/internal/continuity/fs"
 	fstypes "github.com/dagger/dagger/internal/fsutil/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"

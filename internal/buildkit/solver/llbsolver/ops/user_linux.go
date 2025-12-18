@@ -4,10 +4,10 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/worker"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	copy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/moby/sys/user"
 	"github.com/pkg/errors"

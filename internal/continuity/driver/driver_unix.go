@@ -24,8 +24,8 @@ import (
 	"os"
 	"sort"
 
-	"github.com/containerd/continuity/devices"
-	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/internal/continuity/devices"
+	"github.com/dagger/dagger/internal/continuity/sysx"
 )
 
 func (d *driver) Mknod(path string, mode os.FileMode, major, minor int) error {

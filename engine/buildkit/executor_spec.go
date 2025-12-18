@@ -21,7 +21,6 @@ import (
 
 	"github.com/containerd/containerd/v2/core/mount"
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
-	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -32,6 +31,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	bknetwork "github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/google/uuid"

@@ -22,7 +22,7 @@ import (
 	"os"
 	"sort"
 
-	pb "github.com/containerd/continuity/proto"
+	pb "github.com/dagger/dagger/internal/continuity/proto"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 )

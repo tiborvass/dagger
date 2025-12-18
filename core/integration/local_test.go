@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/containerd/continuity/fs/fstest"
+	"github.com/dagger/dagger/internal/continuity/fs/fstest"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"

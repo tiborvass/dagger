@@ -8,12 +8,12 @@ import (
 	"path"
 	"strings"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/internal/buildkit/exporter"
 	gatewaypb "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/snapshot"
 	"github.com/dagger/dagger/internal/buildkit/solver/result"
+	"github.com/dagger/dagger/internal/continuity/fs"
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
