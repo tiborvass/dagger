@@ -26,7 +26,7 @@ type Check struct {
 	Description string   `field:"true" doc:"The description of the check"`
 	Completed   bool     `field:"true" doc:"Whether the check completed"`
 	Passed      bool     `field:"true" doc:"Whether the check passed"`
-	Module      *Module
+	Module      *Module  `field:"true" doc:"The module where the check runs"`
 }
 
 func (*Check) Type() *ast.Type {
