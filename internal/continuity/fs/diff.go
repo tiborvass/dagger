@@ -50,6 +50,7 @@ const (
 	ChangeKindDelete
 )
 
+/*
 func (k ChangeKind) String() string {
 	switch k {
 	case ChangeKindUnmodified:
@@ -64,6 +65,7 @@ func (k ChangeKind) String() string {
 		return ""
 	}
 }
+*/
 
 // Change represents single change between a diff and its parent.
 type Change struct {
