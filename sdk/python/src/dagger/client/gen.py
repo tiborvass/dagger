@@ -1185,6 +1185,12 @@ class Check(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(CheckID)
 
+    def module(self) -> "Module":
+        """The module where the check runs"""
+        _args: list[Arg] = []
+        _ctx = self._select("module", _args)
+        return Module(_ctx)
+
     async def name(self) -> str:
         """Return the fully qualified name of the check
 

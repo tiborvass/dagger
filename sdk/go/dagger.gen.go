@@ -1155,6 +1155,15 @@ func (r *Check) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The module where the check runs
+func (r *Check) Module() *Module {
+	q := r.query.Select("module")
+
+	return &Module{
+		query: q,
+	}
+}
+
 // Return the fully qualified name of the check
 func (r *Check) Name(ctx context.Context) (string, error) {
 	if r.name != nil {

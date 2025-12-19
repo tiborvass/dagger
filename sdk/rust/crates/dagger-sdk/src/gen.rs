@@ -2414,6 +2414,15 @@ impl Check {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The module where the check runs
+    pub fn module(&self) -> Module {
+        let query = self.selection.select("module");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Return the fully qualified name of the check
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");

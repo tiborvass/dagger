@@ -3044,6 +3044,14 @@ export class Check extends BaseClient {
   }
 
   /**
+   * The module where the check runs
+   */
+  module_ = (): Module_ => {
+    const ctx = this._ctx.select("module")
+    return new Module_(ctx)
+  }
+
+  /**
    * Return the fully qualified name of the check
    */
   name = async (): Promise<string> => {
