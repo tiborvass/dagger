@@ -13,6 +13,7 @@ type GoSdkDev {
     "!engine/slog"
     "!engine/distconsts"
     "!internal/fsutil"
+    "!internal/continuity"
   ])
 
   """
