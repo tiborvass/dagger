@@ -249,8 +249,8 @@ type Check {
   """A unique identifier for this Check."""
   id: CheckID!
 
-  """The module where the check runs"""
-  module: Module!
+  """The module source where the check is defined"""
+  moduleSource: ModuleSource!
 
   """Return the fully qualified name of the check"""
   name: String!

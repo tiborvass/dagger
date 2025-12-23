@@ -1155,11 +1155,11 @@ func (r *Check) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The module where the check runs
-func (r *Check) Module() *Module {
-	q := r.query.Select("module")
+// The module source where the check is defined
+func (r *Check) ModuleSource() *ModuleSource {
+	q := r.query.Select("moduleSource")
 
-	return &Module{
+	return &ModuleSource{
 		query: q,
 	}
 }

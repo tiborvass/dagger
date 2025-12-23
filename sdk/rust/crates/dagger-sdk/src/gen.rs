@@ -2414,10 +2414,10 @@ impl Check {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The module where the check runs
-    pub fn module(&self) -> Module {
-        let query = self.selection.select("module");
-        Module {
+    /// The module source where the check is defined
+    pub fn module_source(&self) -> ModuleSource {
+        let query = self.selection.select("moduleSource");
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

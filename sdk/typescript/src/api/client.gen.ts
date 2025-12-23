@@ -3044,11 +3044,11 @@ export class Check extends BaseClient {
   }
 
   /**
-   * The module where the check runs
+   * The module source where the check is defined
    */
-  module_ = (): Module_ => {
-    const ctx = this._ctx.select("module")
-    return new Module_(ctx)
+  moduleSource = (): ModuleSource => {
+    const ctx = this._ctx.select("moduleSource")
+    return new ModuleSource(ctx)
   }
 
   /**

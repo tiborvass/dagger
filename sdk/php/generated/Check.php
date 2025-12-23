@@ -38,12 +38,12 @@ class Check extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The module where the check runs
+     * The module source where the check is defined
      */
-    public function module(): Module
+    public function moduleSource(): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('module');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

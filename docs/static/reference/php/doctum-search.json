@@ -1651,9 +1651,9 @@
 		},
 		{
 			"t": "M",
-			"n": "Dagger\\Check::module",
-			"p": "Dagger/Check.html#method_module",
-			"d": "<p>The module where the check runs</p>"
+			"n": "Dagger\\Check::moduleSource",
+			"p": "Dagger/Check.html#method_moduleSource",
+			"d": "<p>The module source where the check is defined</p>"
 		},
 		{
 			"t": "M",
