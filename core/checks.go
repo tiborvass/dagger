@@ -220,6 +220,7 @@ func (c *Check) Name() string {
 func (c *Check) Clone() *Check {
 	cp := *c
 	cp.Module = c.Module.Clone()
+	cp.ModuleSource = c.ModuleSource.Clone()
 	return &cp
 }
 

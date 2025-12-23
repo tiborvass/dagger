@@ -151,6 +151,8 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 				// Prepend the toolchain name to the check path
 				check.Path = append([]string{gqlFieldName(tcMod.NameField)}, check.Path...)
 
+				check.ModuleSource = tcMod.GetSource()
+
 				match, err := check.Match(include)
 				if err != nil {
 					return nil, err
