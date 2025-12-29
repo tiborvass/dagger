@@ -168,6 +168,9 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	// mod and any toolchain mods
 	for _, check := range group.Checks {
 		check.Module = mod
+		if check.ModuleSource == nil {
+			check.ModuleSource = mod.GetSource()
+		}
 	}
 	return group, nil
 }
