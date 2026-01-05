@@ -27,6 +27,9 @@ const (
 func collectDefs(ctx context.Context, val dagql.AnyResult) []*pb.Definition {
 	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
 		ctx := dagql.ContextWithID(ctx, val.ID())
+		if hasPBs == nil {
+			return nil
+		}
 		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 			slog.Warn("failed to get LLB definitions", "err", err)
 			return nil
@@ -122,7 +125,9 @@ func AroundFunc(
 		defer telemetry.EndWithCause(span, err)
 		recordStatus(ctx, res, span, cached, err, id)
 		logResult(ctx, res, self, id)
-		collectEffects(ctx, res, span, self)
+		if res != nil {
+			collectEffects(ctx, res, span, self)
+		}
 	}
 }
 

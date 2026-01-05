@@ -98,13 +98,16 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+func (mod *Module) Checks(ctx context.Context, include []string) (group *CheckGroup, err error) {
+	defer func() {
+		fmt.Println("☯️ foo", group, err)
+	}()
 	mainObj, ok := mod.MainObject()
 	if !ok {
 		return nil, fmt.Errorf("scan for checks: %q: can't load main object", mod.Name())
 	}
 	objChecksCache := map[string][]*Check{}
-	group := &CheckGroup{Module: mod}
+	group = &CheckGroup{Module: mod}
 	// 1. Walk main module for checks
 	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
 		match, err := check.Match(include)
@@ -168,6 +171,7 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	// mod and any toolchain mods
 	for _, check := range group.Checks {
 		check.Module = mod
+		fmt.Println("☯️", check.Name(), check.ModuleSource)
 		if check.ModuleSource == nil {
 			check.ModuleSource = mod.GetSource()
 		}

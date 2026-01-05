@@ -26,7 +26,7 @@ type Check struct {
 	Description  string        `field:"true" doc:"The description of the check"`
 	Completed    bool          `field:"true" doc:"Whether the check completed"`
 	Passed       bool          `field:"true" doc:"Whether the check passed"`
-	ModuleSource *ModuleSource `field:"true" doc:"The module source where the check is defined"`
+	ModuleSource *ModuleSource `field:"true" doc:"The module source of the toolchain where the check is defined"`
 	Module       *Module       `field:"false" doc:"The module where the check is run"`
 }
 

@@ -249,6 +249,9 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var pbDefs []*pb.Definition
+	if src == nil {
+		return []*pb.Definition{}, nil
+	}
 	if src.ContextDirectory.Self() != nil {
 		defs, err := src.ContextDirectory.Self().PBDefinitions(ctx)
 		if err != nil {
@@ -274,6 +277,9 @@ func (src *ModuleSource) Evaluate(context.Context) (*buildkit.Result, error) {
 }
 
 func (src *ModuleSource) AsString() string {
+	if src == nil {
+		return ""
+	}
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		return filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
