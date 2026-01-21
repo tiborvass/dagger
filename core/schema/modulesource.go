@@ -114,6 +114,10 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 		dagql.Func("originalSubpath", s.moduleSourceOriginalSubpath).
 			Doc(`The original subpath used when instantiating this module source, relative to the context directory.`),
 
+		// FIXME: if it is decided to make it public, simply change core.ModuleSource.RebasedIncludePaths struct tag to add field:"true" so the _rebasedIncludes can be removed.
+		dagql.Func("_rebasedIncludes", s.moduleSourceRebasedIncludes).
+			Doc(`The list of includes as specified in the dagger.json`),
+
 		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, dagql.CachePerClient).
 			Doc(`Update the module source with a new source subpath.`).
 			Args(
@@ -1271,6 +1275,14 @@ func (s *moduleSourceSchema) moduleSourceOriginalSubpath(
 	args struct{},
 ) (string, error) {
 	return src.OriginalSubpath, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceRebasedIncludes(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]string, error) {
+	return src.RebasedIncludePaths, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
