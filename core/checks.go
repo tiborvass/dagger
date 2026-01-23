@@ -38,7 +38,7 @@ func (*Check) Type() *ast.Type {
 }
 
 type CheckGroup struct {
-	Module       *Module  `json:"modules"`
+	Module       *Module  `json:"module"`
 	Checks       []*Check `json:"checks"`
 	DefaultPaths []DefaultPath
 }
