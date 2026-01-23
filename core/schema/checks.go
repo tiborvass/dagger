@@ -21,6 +21,9 @@ func (s checksSchema) Install(srv *dagql.Server) {
 
 		dagql.Func("report", s.report).
 			Doc("Generate a markdown report"),
+
+		dagql.Func("_defaultPaths", s.checksDefaultPaths).
+			Doc(`The list of function arguments reachable by checks, that contain +defaultPath pragmas`),
 	}.Install(srv)
 
 	// Check methods
@@ -56,4 +59,8 @@ func (s checksSchema) report(ctx context.Context, parent *core.CheckGroup, args 
 
 func (s checksSchema) runSingleCheck(ctx context.Context, parent *core.Check, args struct{}) (*core.Check, error) {
 	return parent.Run(ctx)
+}
+
+func (s checksSchema) checksDefaultPaths(ctx context.Context, parent *core.CheckGroup, _ struct{}) ([]core.DefaultPath, error) {
+	return parent.DefaultPaths, nil
 }

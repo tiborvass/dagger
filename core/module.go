@@ -107,7 +107,7 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 	objChecksCache := map[string][]*Check{}
 	group := &CheckGroup{Module: mod}
 	// 1. Walk main module for checks
-	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache) {
+	for _, check := range mod.walkObjectChecks(ctx, mainObj, objChecksCache, group) {
 		match, err := check.Match(include)
 		if err != nil {
 			return nil, err
@@ -127,7 +127,7 @@ func (mod *Module) Checks(ctx context.Context, include []string) (*CheckGroup, e
 			ignorePatterns := mod.ToolchainIgnoreChecks[tcMod.OriginalName]
 
 			// Walk the toolchain module's checks
-			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache) {
+			for _, check := range tcMod.walkObjectChecks(ctx, tcMainObj, objChecksCache, group) {
 				// Check if this check should be ignored (before prepending toolchain name)
 				// This allows ignoreChecks patterns to be scoped to the toolchain without needing the prefix
 				ignored := false
@@ -193,7 +193,7 @@ func (mod *Module) ObjectByName(name string) (*ObjectTypeDef, bool) {
 	return nil, false
 }
 
-func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check) []*Check { //nolint:unparam
+func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, objChecksCache map[string][]*Check, group *CheckGroup) []*Check { //nolint:unparam
 	if cached, ok := objChecksCache[obj.Name]; ok {
 		return cached
 	}
@@ -201,10 +201,16 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 	objChecksCache[obj.Name] = checks
 	subObjects := map[string]*ObjectTypeDef{}
 	for _, fn := range obj.Functions {
+		// FIXME: no need for closure
 		func() {
-			if functionRequiresArgs(fn) {
+			defaultPaths, requiresArgs := walkFunctionArgs(obj, fn)
+			group.DefaultPaths = append(group.DefaultPaths, defaultPaths...)
+			if requiresArgs {
 				return
 			}
+			// if functionRequiresArgs(fn) {
+			// 	return
+			// }
 			// 1. Scan object for checks
 			if fn.IsCheck {
 				checks = append(checks, &Check{
@@ -234,7 +240,7 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 		}
 	}
 	for key, subObj := range subObjects {
-		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache)
+		subChecks := mod.walkObjectChecks(ctx, subObj, objChecksCache, group)
 		for _, subCheck := range subChecks {
 			subCheck.Path = append([]string{gqlFieldName(key)}, subCheck.Path...)
 		}
@@ -244,24 +250,25 @@ func (mod *Module) walkObjectChecks(ctx context.Context, obj *ObjectTypeDef, obj
 	return checks
 }
 
-func functionRequiresArgs(fn *Function) bool {
+func walkFunctionArgs(obj *ObjectTypeDef, fn *Function) (defaultPaths []DefaultPath, requiresArgs bool) {
 	for _, arg := range fn.Args {
 		// NOTE: we count on user defaults already merged in the schema at this point
-		// "regular optional" -> ok
-		if arg.TypeDef.Optional {
-			continue
-		}
 		// "contextual optional" -> ok
 		if arg.DefaultPath != "" {
+			defaultPaths = append(defaultPaths, DefaultPath{obj, fn, arg})
+			continue
+		}
+		// "regular optional" -> ok
+		if arg.TypeDef.Optional {
 			continue
 		}
 		// default value -> ok
 		if arg.DefaultValue != nil {
 			continue
 		}
-		return true
+		requiresArgs = true
 	}
-	return false
+	return defaultPaths, requiresArgs
 }
 
 func (mod *Module) GetSource() *ModuleSource {
@@ -1222,4 +1229,25 @@ func (mod CurrentModule) Clone() *CurrentModule {
 	cp := mod
 	cp.Module = mod.Module.Clone()
 	return &cp
+}
+
+type DefaultPath struct {
+	Object   *ObjectTypeDef
+	Function *Function
+	Arg      *FunctionArg
+}
+
+func (dp DefaultPath) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "_DefaultPath",
+		NonNull:   true,
+	}
+}
+
+func (dp DefaultPath) TypeDescription() string {
+	return "List of function arguments that contain +defaultPath pragmas."
+}
+
+func (dp DefaultPath) Clone() DefaultPath {
+	return DefaultPath{dp.Object.Clone(), dp.Function.Clone(), dp.Arg.Clone()}
 }
