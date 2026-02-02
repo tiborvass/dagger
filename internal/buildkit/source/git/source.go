@@ -558,6 +558,7 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 		} else {
 			pullref += ":" + pullref
 		}
+		panic("buildkit fetch")
 		_, err = checkoutGit.Run(ctx, "fetch", "-u", "--depth=1", "origin", pullref)
 		if err != nil {
 			return nil, err

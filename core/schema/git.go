@@ -326,7 +326,7 @@ func (s *gitSchema) url(ctx context.Context, parent dagql.ObjectResult[*core.Git
 
 		var result dagql.String
 		if err := srv.Select(ctx, parent, &result,
-			dagql.Selector{Field: "__resolve"},
+			dagql.Selector{Field: "__resolve", Args: []dagql.NamedInput{{Name: "useFetch", Value: dagql.Boolean(false)}, {Name: "depth", Value: dagql.Int(0)}}},
 			dagql.Selector{Field: "url"},
 		); err != nil {
 			return dagql.Null[dagql.String](), err
@@ -670,7 +670,10 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 
 		var result dagql.ObjectResult[*core.Directory]
 		if err := srv.Select(ctx, parent, &result,
-			dagql.Selector{Field: "__resolve"},
+			dagql.Selector{Field: "__resolve", Args: []dagql.NamedInput{
+				{Name: "useFetch", Value: dagql.Boolean(true)},
+				{Name: "depth", Value: dagql.Int(args.Depth)},
+			}},
 			treeSelector,
 		); err != nil {
 			return inst, err
@@ -837,6 +840,11 @@ func (s *gitSchema) commonAncestor(
 	return dagql.NewObjectResultForCurrentID(ctx, srv, result)
 }
 
+type repoResolveArgs struct {
+	Ref   string `default:""`
+	Depth int    `default:"0"`
+}
+
 // repoResolve implements GitRepository.__resolve.
 //
 // Uses a recursive redirect pattern:
@@ -848,7 +856,7 @@ func (s *gitSchema) commonAncestor(
 func (s *gitSchema) repoResolve(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
-	_ struct{},
+	args repoResolveArgs,
 ) (dagql.ObjectResult[*core.GitRepository], error) {
 	var zero dagql.ObjectResult[*core.GitRepository]
 
@@ -869,12 +877,12 @@ func (s *gitSchema) repoResolve(
 
 	// Case 1: Ambiguous URL (no protocol) - redirect to explicit URL variant
 	if remote.URL == nil {
-		return s.resolveAmbiguousURLViaRedirect(ctx, srv, parent, remote)
+		return s.resolveAmbiguousURLViaRedirect(ctx, srv, parent, remote, args)
 	}
 
 	// Case 2: Explicit URL but no auth - redirect with auth from context
 	if !s.hasExplicitAuth(remote) {
-		if result, ok, err := s.resolveWithAuthFromContext(ctx, srv, parent, remote); err != nil {
+		if result, ok, err := s.resolveWithAuthFromContext(ctx, srv, parent, remote, args); err != nil {
 			return zero, err
 		} else if ok {
 			return result, nil
@@ -890,7 +898,7 @@ func (s *gitSchema) repoResolve(
 	remoteClone := remote.Clone()
 	resolved.Backend = remoteClone
 
-	if err := resolved.Resolve(ctx); err != nil {
+	if err := resolved.Resolve(ctx, args.Ref, args.Depth); err != nil {
 		return zero, err
 	}
 	resolved.Resolved = true
@@ -910,16 +918,17 @@ func (s *gitSchema) resolveAmbiguousURLViaRedirect(
 	srv *dagql.Server,
 	parent dagql.ObjectResult[*core.GitRepository],
 	remote *core.RemoteGitRepository,
+	args repoResolveArgs,
 ) (dagql.ObjectResult[*core.GitRepository], error) {
 	var zero dagql.ObjectResult[*core.GitRepository]
 	rawURL := parent.ID().Arg("url").Value().ToInput().(string)
 
 	// If auth method is specified, we can infer the scheme
 	if remote.SSHAuthSocket.Valid {
-		return s.redirectToURL(ctx, srv, parent, remote, "ssh://git@"+rawURL)
+		return s.redirectToURL(ctx, srv, parent, remote, "ssh://git@"+rawURL, args)
 	}
 	if remote.AuthToken.Valid || remote.AuthHeader.Valid {
-		return s.redirectToURL(ctx, srv, parent, remote, "https://"+rawURL)
+		return s.redirectToURL(ctx, srv, parent, remote, "https://"+rawURL, args)
 	}
 
 	// No auth specified - try https first, then ssh
@@ -956,6 +965,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 	srv *dagql.Server,
 	parent dagql.ObjectResult[*core.GitRepository],
 	remote *core.RemoteGitRepository,
+	args repoResolveArgs,
 ) (dagql.ObjectResult[*core.GitRepository], bool, error) {
 	var zero dagql.ObjectResult[*core.GitRepository]
 
@@ -996,7 +1006,7 @@ func (s *gitSchema) resolveWithAuthFromContext(
 				Field: "git",
 				Args:  s.buildRedirectArgs(parent, remote, remote.URL.String(), authArgs),
 			},
-			dagql.Selector{Field: "__resolve"},
+			dagql.Selector{Field: "__resolve", Args: []dagql.NamedInput{{Name: "ref", Value: dagql.String(args.Ref)}, {Name: "depth", Value: dagql.Int(args.Depth)}}},
 		); err != nil {
 			return zero, false, err
 		}
@@ -1025,7 +1035,10 @@ func (s *gitSchema) resolveWithAuthFromContext(
 				Field: "git",
 				Args:  s.buildRedirectArgs(parent, remote, remote.URL.String(), authArgs),
 			},
-			dagql.Selector{Field: "__resolve"},
+			dagql.Selector{
+				Field: "__resolve",
+				Args:  []dagql.NamedInput{{Name: "ref", Value: dagql.String(args.Ref)}, {Name: "depth", Value: dagql.Int(args.Depth)}},
+			},
 		); err != nil {
 			return zero, false, err
 		}
@@ -1042,6 +1055,7 @@ func (s *gitSchema) redirectToURL(
 	parent dagql.ObjectResult[*core.GitRepository],
 	remote *core.RemoteGitRepository,
 	url string,
+	args repoResolveArgs,
 ) (dagql.ObjectResult[*core.GitRepository], error) {
 	var result dagql.ObjectResult[*core.GitRepository]
 	err := srv.Select(ctx, srv.Root(), &result,
@@ -1049,7 +1063,10 @@ func (s *gitSchema) redirectToURL(
 			Field: "git",
 			Args:  s.buildRedirectArgs(parent, remote, url, nil),
 		},
-		dagql.Selector{Field: "__resolve"},
+		dagql.Selector{
+			Field: "__resolve",
+			Args:  []dagql.NamedInput{{Name: "ref", Value: dagql.String(args.Ref)}, {Name: "depth", Value: dagql.Int(args.Depth)}},
+		},
 	)
 	return result, err
 }
@@ -1210,7 +1227,10 @@ func (s *gitSchema) getCredentialFromStore(
 func (s *gitSchema) refResolve(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRef],
-	_ struct{},
+	args struct {
+		UseFetch bool `default:"false"`
+		Depth    int  `default:"0"`
+	},
 ) (dagql.ObjectResult[*core.GitRef], error) {
 	var zero dagql.ObjectResult[*core.GitRef]
 
@@ -1219,10 +1239,19 @@ func (s *gitSchema) refResolve(
 		return zero, fmt.Errorf("failed to get current dagql server: %w", err)
 	}
 
+	var resolveRefValue dagql.Input = dagql.String("")
+	if args.UseFetch {
+		resolveRefValue = dagql.String(parent.Self().Ref.Name)
+	}
+	_ = resolveRefValue
+
 	// Resolve the repo via Select - returns canonical repo with auth in ID
 	var resolvedRepo dagql.ObjectResult[*core.GitRepository]
 	if err := srv.Select(ctx, parent.Self().Repo, &resolvedRepo,
-		dagql.Selector{Field: "__resolve"},
+		dagql.Selector{Field: "__resolve", Args: []dagql.NamedInput{
+			{Name: "ref", Value: dagql.String(parent.Self().Ref.Name)},
+			{Name: "depth", Value: dagql.Int(args.Depth)},
+		}},
 	); err != nil {
 		return zero, fmt.Errorf("failed to resolve repo: %w", err)
 	}

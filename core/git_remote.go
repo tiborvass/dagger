@@ -307,7 +307,7 @@ func (repo *RemoteGitRepository) setup(ctx context.Context) (_ *gitutil.GitCLI, 
 	return gitutil.NewGitCLI(opts...), cleanups.Run, nil
 }
 
-func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) (retErr error) {
+func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error, parseOutput func([]byte)) (retErr error) {
 	g, _ := buildkit.CurrentBuildkitSessionGroup(ctx)
 	return repo.initRemote(ctx, g, func(remote string) error {
 		git, cleanup, err := repo.setup(ctx)
@@ -327,29 +327,31 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 
 			// skip fetch if commit already exists
 			doFetch := true
-			if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
-				return fmt.Errorf("failed to rev-parse: %w", err)
-			} else if strings.TrimSpace(string(res)) == ref.SHA {
-				doFetch = false
+			if ref.SHA != "" {
+				if res, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "rev-parse", "--verify", ref.SHA+"^{commit}"); err != nil {
+					return fmt.Errorf("failed to rev-parse: %w", err)
+				} else if strings.TrimSpace(string(res)) == ref.SHA {
+					doFetch = false
 
-				if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
-					// if shallow, check we have enough depth
-					if depth <= 0 {
-						doFetch = true
-					} else {
-						// HACK: this is a pretty terrible way to guess the depth,
-						// since it only traces *one* path.
-						res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
-						if err != nil {
-							return fmt.Errorf("failed to rev-list: %w", err)
-						}
-						res = bytes.TrimSpace(res)
-						count, err := strconv.Atoi(string(res))
-						if err != nil {
-							return fmt.Errorf("failed to parse rev-list output: %w", err)
-						}
-						if count < depth {
+					if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
+						// if shallow, check we have enough depth
+						if depth <= 0 {
 							doFetch = true
+						} else {
+							// HACK: this is a pretty terrible way to guess the depth,
+							// since it only traces *one* path.
+							res, err := git.New().Run(ctx, "rev-list", "--first-parent", "--count", ref.SHA)
+							if err != nil {
+								return fmt.Errorf("failed to rev-list: %w", err)
+							}
+							res = bytes.TrimSpace(res)
+							count, err := strconv.Atoi(string(res))
+							if err != nil {
+								return fmt.Errorf("failed to parse rev-list output: %w", err)
+							}
+							if count < depth {
+								doFetch = true
+							}
 						}
 					}
 				}
@@ -362,7 +364,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 			}
 		}
 
-		err = repo.fetch(ctx, git, depth, fetchRefs)
+		err = repo.fetch(ctx, git, depth, fetchRefs, parseOutput)
 		if err != nil {
 			return err
 		}
@@ -375,7 +377,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, refs []Gi
 	})
 }
 
-func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef) error {
+func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, refs []*RemoteGitRef, parseOutput func([]byte)) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -399,6 +401,9 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		"--update-head-ok",
 		"--force",
 	}
+	if parseOutput != nil {
+		args = append(args, "--porcelain")
+	}
 	if depth <= 0 {
 		if _, err := os.Lstat(filepath.Join(gitDir, "shallow")); err == nil {
 			args = append(args, "--unshallow")
@@ -419,7 +424,8 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	}
 	defer detach()
 
-	if _, err := git.Run(ctx, args...); err != nil {
+	out, err := git.Run(ctx, args...)
+	if err != nil {
 		if errors.Is(err, gitutil.ErrShallowNotSupported) {
 			// fallback to full fetch
 			args = slices.DeleteFunc(args, func(s string) bool {
@@ -433,6 +439,9 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		}
 	}
 
+	if parseOutput != nil {
+		parseOutput(out)
+	}
 	return nil
 }
 
@@ -594,7 +603,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -620,8 +629,8 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return checkout, nil
 }
 
-func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
+func (ref *RemoteGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error, parseOutput func([]byte)) error {
+	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn, parseOutput)
 }
 
 func DNSConfig(ctx context.Context) (*oci.DNSConfig, error) {

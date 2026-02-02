@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -47,7 +48,7 @@ type GitRepositoryBackend interface {
 	Cleaned(ctx context.Context) (dagql.ObjectResult[*Directory], error)
 
 	// mount mounts the repository with the provided refs and executes the given function.
-	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error
+	mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error, parseOutput func([]byte)) error
 }
 
 type GitRef struct {
@@ -65,7 +66,7 @@ type GitRefBackend interface {
 
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int) (checkout *Directory, err error)
 
-	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error
+	mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error, parseOutput func([]byte)) error
 }
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
@@ -86,15 +87,41 @@ func (*GitRepository) TypeDescription() string {
 }
 
 // Resolve fetches remote metadata. Mutates in place: only call from `__resolve`.
-func (repo *GitRepository) Resolve(ctx context.Context) error {
+func (repo *GitRepository) Resolve(ctx context.Context, ref string, depth int) error {
 	if repo.Remote == nil {
-		remote, err := repo.Backend.Remote(ctx)
-		if err != nil {
-			return err
+		if ref == "" {
+			remote, err := repo.Backend.Remote(ctx)
+			if err != nil {
+				return err
+			}
+			repo.Remote = remote
+			return nil
 		}
-		repo.Remote = remote
+		repo.Remote = gitutil.NewRemote()
+	} else if repo.Remote.Get(ref) != nil {
+		return nil
 	}
-	return nil
+
+	rrepo, ok := repo.Backend.(*RemoteGitRepository)
+	if !ok {
+		return nil
+	}
+
+	parseOutput := func(out []byte) {
+		for _, line := range bytes.Split(out, []byte{'\n'}) {
+			fields := bytes.SplitN(line, []byte{' '}, 4)
+			if len(fields) > 2 && bytes.Equal(fields[0], []byte("*")) {
+				name := ref
+				if !bytes.Equal(fields[3], []byte("FETCH_HEAD")) {
+					name = string(fields[3])
+				}
+				repo.Remote.Add(name, string(fields[2]))
+			}
+		}
+	}
+	rref := &RemoteGitRef{Ref: &gitutil.Ref{Name: ref}, repo: rrepo}
+	// mount will eventually call fetch
+	return rrepo.mount(ctx, depth, []GitRefBackend{rref}, func(*gitutil.GitCLI) error { return nil }, parseOutput)
 }
 
 func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -148,10 +175,19 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 // Resolve canonicalizes SHA/name and initializes backend. Mutates in place: only call from `__resolve`.
 func (ref *GitRef) Resolve(ctx context.Context) error {
 	repo := ref.Repo.Self()
-
-	if err := repo.Resolve(ctx); err != nil {
-		return err
-	}
+	/*
+		var repoResolveArg string
+		if useFetch {
+			repoResolveArg = ref.Ref.SHA
+			if repoResolveArg == "" {
+				repoResolveArg = ref.Ref.Name
+			}
+		}
+		if err := repo.Resolve(ctx, repoResolveArg); err != nil {
+			return err
+		}
+	*/
+	_ = repo.Resolve
 
 	if ref.Ref.Name != "" {
 		resolvedRefInfo, err := repo.Remote.Lookup(ref.Ref.Name)
@@ -286,7 +322,7 @@ func MergeBase(ctx context.Context, ref1 *GitRef, ref2 *GitRef) (*GitRef, error)
 			}
 			mergeBase = strings.TrimSpace(string(out))
 			return nil
-		})
+		}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -364,7 +400,7 @@ func refJoin(ctx context.Context, refs []*GitRef) (_ *gitutil.GitCLI, _ []string
 					return fmt.Errorf("failed to fetch ref %d: %w", i+1, err)
 				}
 				return nil
-			})
+			}, nil)
 		})
 	}
 

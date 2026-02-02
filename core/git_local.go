@@ -51,7 +51,7 @@ func (repo *LocalGitRepository) Remote(ctx context.Context) (*gitutil.Remote, er
 		}
 		remote, err = gitutil.NewGitCLI().LsRemote(ctx, gitURL)
 		return err
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (repo *LocalGitRepository) File(ctx context.Context, filename string) (*Fil
 		}
 		gitDir = dir
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +211,7 @@ func (repo *LocalGitRepository) Cleaned(ctx context.Context) (inst dagql.ObjectR
 	return dagql.NewObjectResultForCurrentID(ctx, srv, dir)
 }
 
-func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error) error {
+func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []GitRefBackend, fn func(*gitutil.GitCLI) error, _ func([]byte)) error {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return err
@@ -237,8 +237,8 @@ func (repo *LocalGitRepository) mount(ctx context.Context, depth int, refs []Git
 	})
 }
 
-func (ref *LocalGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error) error {
-	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn)
+func (ref *LocalGitRef) mount(ctx context.Context, depth int, fn func(*gitutil.GitCLI) error, parseOutput func([]byte)) error {
+	return ref.repo.mount(ctx, depth, []GitRefBackend{ref}, fn, parseOutput)
 }
 
 func (ref *LocalGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
@@ -288,7 +288,7 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 			)
 			return doGitCheckout(ctx, checkoutGit, "", gitURL, ref.Ref, depth, discardGitDir)
 		})
-	})
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checkout %s: %w", ref.Ref.Name, err)
 	}

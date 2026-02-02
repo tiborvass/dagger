@@ -3,6 +3,7 @@ package gitutil
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/util/hashutil"
@@ -11,10 +12,15 @@ import (
 
 type Remote struct {
 	Refs    []*Ref
+	RefMap  map[string]*Ref
 	Symrefs map[string]string
 
 	// override what HEAD points to, if set
 	Head *Ref
+}
+
+func NewRemote() *Remote {
+	return &Remote{RefMap: map[string]*Ref{}, Symrefs: map[string]string{}}
 }
 
 type Ref struct {
@@ -60,6 +66,7 @@ func (cli *GitCLI) LsRemote(ctx context.Context, remote string) (*Remote, error)
 	lines := strings.Split(string(out), "\n")
 
 	refs := make([]*Ref, 0, len(lines))
+	refMap := make(map[string]*Ref, len(lines))
 	symrefs := make(map[string]string)
 
 	for _, line := range lines {
@@ -73,11 +80,15 @@ func (cli *GitCLI) LsRemote(ctx context.Context, remote string) (*Remote, error)
 			symrefs[v] = target
 		} else {
 			// normal ref
-			refs = append(refs, &Ref{SHA: k, Name: v})
+			ref := &Ref{SHA: k, Name: v}
+			// assuming server returns the ref list in alphabetical order
+			refs = append(refs, ref)
+			refMap[v] = ref
 		}
 	}
 
 	return &Remote{
+		RefMap:  refMap,
 		Refs:    refs,
 		Symrefs: symrefs,
 	}, nil
@@ -157,59 +168,75 @@ func (remote *Remote) ShortNames() []string {
 }
 
 func (remote *Remote) Get(name string) (result *Ref) {
-	for _, ref := range remote.Refs {
-		if ref.Name == name {
-			return ref
-		}
+	// TODO: maybe use remote.lookup instead ?
+	return remote.RefMap[name]
+}
+
+// Add assumes remote.Get(name) returns nil
+func (remote *Remote) Add(name, sha string) error {
+	ref := &Ref{Name: name, SHA: sha}
+	remote.RefMap[name] = ref
+	j := len(remote.Refs)
+	remote.Refs = append(remote.Refs, ref)
+	// insert into sorted slice
+	i := sort.Search(len(remote.Refs), func(i int) bool {
+		return remote.Refs[i].Name >= name
+	})
+	if i != j {
+		remote.Refs[i], remote.Refs[j] = remote.Refs[j], remote.Refs[i]
 	}
 	return nil
 }
 
+// func (remote *Remote) resolveHead(target string) (string, bool) {
+// 	return "", false
+// }
+
 // Lookup looks up a ref by name, simulating git-checkout semantics.
 // It handles full refs, partial refs, commits, symrefs, HEAD resolution, etc.
 func (remote *Remote) Lookup(target string) (result *Ref, _ error) {
+	match, err := remote.lookup(target)
+	if err != nil {
+		return nil, err
+	}
+	if match == nil {
+		return nil, fmt.Errorf("[ls-remote] repository does not contain ref %q", target)
+	}
+	return match, nil
+}
+
+func (remote *Remote) lookup(target string) (match *Ref, err error) {
 	isHead := target == "HEAD"
 	if isHead && remote.Head != nil && remote.Head.Name != "" {
 		// resolve HEAD to a specific ref
 		target = remote.Head.Name
 	}
-
 	if IsCommitSHA(target) {
 		return &Ref{SHA: target}, nil
 	}
 
 	// simulate git-checkout semantics, and make sure to select exactly the right ref
-	var (
-		partialRef   = "refs/" + strings.TrimPrefix(target, "refs/")
-		headRef      = "refs/heads/" + strings.TrimPrefix(target, "refs/heads/")
-		tagRef       = "refs/tags/" + strings.TrimPrefix(target, "refs/tags/")
-		peeledTagRef = tagRef + "^{}"
-	)
-	var match, headMatch, tagMatch *Ref
 
-	for _, ref := range remote.Refs {
-		switch ref.Name {
-		case headRef:
-			headMatch = ref
-		case tagRef, peeledTagRef:
-			tagMatch = ref
-			tagMatch.Name = tagRef
-		case partialRef:
-			match = ref
-		case target:
-			match = ref
+	targetRef := remote.RefMap[target]
+	partialRef := remote.RefMap["refs/"+strings.TrimPrefix(target, "refs/")]
+	headRef := remote.RefMap["refs/heads/"+strings.TrimPrefix(target, "refs/heads/")]
+	tagRefName := "refs/tags/" + strings.TrimPrefix(target, "refs/tags/")
+	tagRef := remote.RefMap[tagRefName]
+	peeledTagRef := remote.RefMap[tagRefName+"^{}"]
+	if peeledTagRef != nil {
+		peeledTagRef.Name = tagRefName
+	}
+
+	// git-checkout prefers branches in case of ambiguity
+	for _, match = range []*Ref{targetRef, partialRef, headRef, tagRef, peeledTagRef} {
+		if match != nil {
+			break
 		}
 	}
-	// git-checkout prefers branches in case of ambiguity
 	if match == nil {
-		match = headMatch
+		return nil, nil
 	}
-	if match == nil {
-		match = tagMatch
-	}
-	if match == nil {
-		return nil, fmt.Errorf("repository does not contain ref %q", target)
-	}
+
 	if !IsCommitSHA(match.SHA) {
 		return nil, fmt.Errorf("invalid commit sha %q for %q", match.SHA, match.Name)
 	}
