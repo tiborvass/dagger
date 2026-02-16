@@ -45,6 +45,8 @@ import (
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
+// test
+
 var (
 	cpuprofile = os.Getenv("CPUPROFILE")
 	pprofAddr  = os.Getenv("PPROF")
