@@ -812,6 +812,33 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
 	})
 
+	t.Run("errors if installed dependency fails to load", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
+			WithNewFile("/work/dep/main.go", `package main
+
+import "context"
+
+type Dep struct{}
+
+func (m *Dep) Fn(ctx context.Context) string {
+	return definitelyUndefinedSymbol
+}
+`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("install", "./dep")).
+			Sync(ctx)
+
+		requireErrOut(t, err, "failed to load installed module")
+		requireErrOut(t, err, "definitelyUndefinedSymbol")
+	})
+
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
