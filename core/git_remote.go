@@ -50,6 +50,8 @@ type RemoteGitRepository struct {
 	AuthUsername string
 	AuthToken    dagql.ObjectResult[*Secret]
 	AuthHeader   dagql.ObjectResult[*Secret]
+
+	CloneURL string
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
@@ -75,6 +77,8 @@ func (repo *RemoteGitRepository) Remote(ctx context.Context) (result *gitutil.Re
 	if err != nil {
 		return nil, fmt.Errorf("remote git repository %q: %w", repo.URL.Remote(), err)
 	}
+
+	repo.CloneURL = maybeRewriteRemoteForVarnish(repo)
 
 	if srv == nil || srv.Cache == nil {
 		slog.Info("git remote cache unavailable; running ls-remote", "cache_key", cacheKey)
@@ -181,7 +185,7 @@ func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remo
 	}
 	defer cleanup()
 
-	remote, err := git.LsRemote(ctx, repo.URL.Remote())
+	remote, err := git.LsRemote(ctx, repo.CloneURL)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +348,7 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 		}
 		_, err = git.Run(ctx, "reflog", "expire", "--all", "--expire=now")
 		if err != nil {
-			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.URL.Remote(), err)
+			return fmt.Errorf("failed to expire reflog for remote %s: %w", repo.CloneURL, err)
 		}
 
 		return fn(git)
@@ -356,6 +360,8 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	if err != nil {
 		return err
 	}
+
+	cloneRemote := repo.CloneURL
 
 	if len(refs) == 0 && !includeTags {
 		// Nothing requested: avoid an implicit broad fetch from origin.
@@ -443,28 +449,28 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		err = runFetch(shaRefSpecs)
 		if err != nil {
 			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
-				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+				return fmt.Errorf("failed to fetch remote %s: %w", cloneRemote, err)
 			}
 
 			namedSpecs := namedFetchRefSpecs(refs)
 			if len(namedSpecs) == 0 {
-				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+				return fmt.Errorf("failed to fetch remote %s: %w", cloneRemote, err)
 			}
 
-			logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+			logger.Debug("git fetch by sha failed; retrying with named refs", "remote", cloneRemote, "refspec_count", len(namedSpecs))
 			if retryErr := runFetch(namedSpecs); retryErr != nil {
-				return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
+				return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", cloneRemote, err, retryErr)
 			}
 			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
-				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
+				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", cloneRemote, verifyErr)
 			}
-			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+			logger.Debug("git fetch named-ref retry succeeded", "remote", cloneRemote, "refspec_count", len(namedSpecs))
 		}
 	}
 
 	if includeTags {
 		if tagErr := runFetchTags(); tagErr != nil {
-			return fmt.Errorf("failed to hydrate tags for remote %s: %w", repo.URL.Remote(), tagErr)
+			return fmt.Errorf("failed to hydrate tags for remote %s: %w", cloneRemote, tagErr)
 		}
 	}
 
@@ -491,15 +497,17 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	if err != nil {
 		return err
 	}
+	cloneRemote := repo.CloneURL
+
 	locker := query.Locker()
-	locker.Lock(indexGitRemote + repo.URL.Remote())
-	defer locker.Unlock(indexGitRemote + repo.URL.Remote())
+	locker.Lock(indexGitRemote + cloneRemote)
+	defer locker.Unlock(indexGitRemote + cloneRemote)
 
 	cache := query.BuildkitCache()
 
-	sis, err := searchGitRemote(ctx, cache, repo.URL.Remote())
+	sis, err := searchGitRemote(ctx, cache, cloneRemote)
 	if err != nil {
-		return fmt.Errorf("failed to search metadata for %s: %w", repo.URL.Remote(), err)
+		return fmt.Errorf("failed to search metadata for %s: %w", cloneRemote, err)
 	}
 
 	var remoteRef bkcache.MutableRef
@@ -508,10 +516,10 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 		if err != nil {
 			if errors.Is(err, bkcache.ErrLocked) {
 				// should never really happen as no other function should access this metadata, but lets be graceful
-				slog.Warn("mutable ref for %s  %s was locked: %v", repo.URL.Remote(), si.ID(), err)
+				slog.Warn("mutable ref for %s  %s was locked: %v", cloneRemote, si.ID(), err)
 				continue
 			}
-			return fmt.Errorf("failed to get mutable ref for %s: %w", repo.URL.Remote(), err)
+			return fmt.Errorf("failed to get mutable ref for %s: %w", cloneRemote, err)
 		}
 		break
 	}
@@ -520,9 +528,9 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	if remoteRef == nil {
 		remoteRef, err = cache.New(ctx, nil, g,
 			bkcache.CachePolicyRetain,
-			bkcache.WithDescription(fmt.Sprintf("shared git repo for %s", repo.URL.Remote())))
+			bkcache.WithDescription(fmt.Sprintf("shared git repo for %s", cloneRemote)))
 		if err != nil {
-			return fmt.Errorf("failed to create new mutable for %s: %w", repo.URL.Remote(), err)
+			return fmt.Errorf("failed to create new mutable for %s: %w", cloneRemote, err)
 		}
 		initializeRepo = true
 	}
@@ -561,13 +569,13 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 			return fmt.Errorf("failed to init repo at %s: %w", dir, err)
 		}
 
-		if _, err := git.Run(ctx, "remote", "add", "origin", repo.URL.Remote()); err != nil {
+		if _, err := git.Run(ctx, "remote", "add", "origin", cloneRemote); err != nil {
 			return fmt.Errorf("failed add origin repo at %s: %w", dir, err)
 		}
 
 		// save new remote metadata
 		md := cacheRefMetadata{remoteRef}
-		if err := md.setGitRemote(repo.URL.Remote()); err != nil {
+		if err := md.setGitRemote(cloneRemote); err != nil {
 			return err
 		}
 	}

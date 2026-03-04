@@ -640,7 +640,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		}
 	}
 
-	repo, err := core.NewGitRepository(ctx, &core.RemoteGitRepository{
+	remoteRepo := &core.RemoteGitRepository{
 		URL:           remote,
 		SSHKnownHosts: args.SSHKnownHosts,
 		SSHAuthSocket: sshAuthSock,
@@ -649,9 +649,14 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 		AuthHeader:    httpAuthHeader,
 		Services:      gitServices,
 		Platform:      parent.Self().Platform(),
-	})
+	}
+
+	repo, err := core.NewGitRepository(ctx, remoteRepo)
 	if err != nil {
 		return inst, err
+	}
+	if remoteRepo.CloneURL == "" {
+		return inst, fmt.Errorf("git internal error: clone URL for %s expected to be initialized", remoteRepo.URL.Remote())
 	}
 	repo.Remote.Head = head
 	repo.DiscardGitDir = discardGitDir
