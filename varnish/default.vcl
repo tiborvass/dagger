@@ -1,10 +1,10 @@
 vcl 4.1;
 
 backend github {
-    .host = "github.com";
-    // varnish:stable OSS does not include HTTPS backend support by default,
-    // so upstream traffic remains HTTP here.
-    .port = "80";
+    // Varnish OSS does not speak TLS to backends directly in this image, so
+    // run.sh starts a local stunnel bridge on 127.0.0.1:8443.
+    .host = "127.0.0.1";
+    .port = "8443";
     .connect_timeout = 5s;
     .first_byte_timeout = 300s;
     .between_bytes_timeout = 300s;

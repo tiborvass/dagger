@@ -14,8 +14,7 @@ are rewritten by the engine to:
 
 The Varnish config in this folder supports `github.com` only.
 
-`varnish:stable` (OSS) does not support HTTPS backends in this setup, so upstream traffic to GitHub uses HTTP (`:80`).
-GitHub responds with redirects to HTTPS; Git follows these redirects, so lookups work, but cache gains are mostly on the redirect response itself.
+`run.sh` installs and starts `stunnel4` inside the container, so Varnish talks to a local TLS bridge on `127.0.0.1:8443`, which then connects to `github.com:443`.
 
 ## Start Varnish
 
