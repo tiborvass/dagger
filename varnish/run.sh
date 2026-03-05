@@ -23,8 +23,12 @@ docker run -d \
   -v "${VOLUME_NAME}:/var/lib/varnish" \
   -v "${ROOT_DIR}/default.vcl:/etc/varnish/default.vcl:ro" \
   "${IMAGE}" \
-  varnishd -F -a :6081 -f /etc/varnish/default.vcl -s "file,/var/lib/varnish/cache.bin,${CACHE_SIZE}" >/dev/null
+  sh -ec '
+    varnishd -a :6081 -f /etc/varnish/default.vcl -s "file,/var/lib/varnish/cache.bin,'"${CACHE_SIZE}"'";
+    exec varnishncsa -a -F "%t %h \"%r\" %s cache=%{X-Varnish-Cache}o"
+  ' >/dev/null
 
 echo "Varnish started: http://127.0.0.1:${PORT}"
 echo "Container: ${CONTAINER_NAME}"
 echo "Volume: ${VOLUME_NAME}"
+echo "Logs: docker logs -f ${CONTAINER_NAME}"

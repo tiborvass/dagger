@@ -46,6 +46,16 @@ Optional environment variables:
 
 This removes only the container. The Docker volume remains, so cache persists across restarts.
 
+## Request Logging (HIT/MISS)
+
+The container runs `varnishncsa`, so `docker logs` includes each request with cache result:
+
+```bash
+docker logs -f dagger-git-varnish
+```
+
+Log lines include `cache=HIT` or `cache=MISS`.
+
 ## Engine Setup
 
 `DAGGER_VARNISH` must be present in the engine process environment at startup.
