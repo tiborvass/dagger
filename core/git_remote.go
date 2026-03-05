@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,10 +34,20 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/util/hashutil"
 )
+
+const (
+	// Keep bundles outside the worker cache tree so engine local-cache prune does not remove them.
+	gitBundleDir            = distconsts.EngineDefaultStateDir + "/git-bundles"
+	gitBundleStatusPath     = "/tmp/bundles-status"
+	gitBundleRefreshTimeout = 15 * time.Minute
+)
+
+var gitBundleRefreshJobs sync.Map
 
 type RemoteGitRepository struct {
 	URL *gitutil.GitURL
@@ -137,6 +148,11 @@ func (repo *RemoteGitRepository) remoteCacheKey(ctx context.Context) (string, er
 		return "", err
 	}
 	inputs := []string{clientMetadata.SessionID, repo.URL.Remote()}
+	bundleScope, err := repo.gitBundleCacheScope()
+	if err != nil {
+		return "", err
+	}
+	inputs = append(inputs, bundleScope)
 	inputs = append(inputs, repo.remoteCacheScope()...)
 	return hashutil.HashStrings(inputs...).String(), nil
 }
@@ -161,6 +177,28 @@ func (repo *RemoteGitRepository) remoteCacheScope() []string {
 }
 
 func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remote, error) {
+	if bundlePath, ok, err := repo.gitBundleRemote(); err != nil {
+		return nil, err
+	} else if ok {
+		remote, bundleErr := gitutil.NewGitCLI().LsRemote(ctx, bundlePath)
+		if bundleErr == nil {
+			return remote, nil
+		}
+
+		slog.Warn("git bundle ls-remote failed; falling back to remote", "remote", repo.URL.Remote(), "bundle", bundlePath, "error", bundleErr)
+
+		remote, err := repo.runLiveLsRemote(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("bundle ls-remote failed: %w; remote fallback failed: %w", bundleErr, err)
+		}
+		repo.startBundleRefresh(ctx, "ls-remote-fallback")
+		return remote, nil
+	}
+
+	return repo.runLiveLsRemote(ctx)
+}
+
+func (repo *RemoteGitRepository) runLiveLsRemote(ctx context.Context) (*gitutil.Remote, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -186,6 +224,10 @@ func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remo
 		return nil, err
 	}
 	return remote, nil
+}
+
+func (repo *RemoteGitRepository) LiveRemote(ctx context.Context) (*gitutil.Remote, error) {
+	return repo.runLiveLsRemote(ctx)
 }
 
 func (repo *RemoteGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
@@ -352,11 +394,6 @@ func (repo *RemoteGitRepository) mount(ctx context.Context, depth int, includeTa
 }
 
 func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI, depth int, includeTags bool, refs []*RemoteGitRef) error {
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return err
-	}
-
 	if len(refs) == 0 && !includeTags {
 		// Nothing requested: avoid an implicit broad fetch from origin.
 		return nil
@@ -376,7 +413,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		shaRefSpecs[i] = ref.SHA
 	}
 
-	runFetch := func(refSpecs []string) error {
+	runFetch := func(source string, refSpecs []string) error {
 		args := []string{
 			"fetch",
 			"--no-tags",
@@ -390,7 +427,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		} else {
 			args = append(args, "--depth="+fmt.Sprint(depth))
 		}
-		args = append(args, "origin")
+		args = append(args, source)
 		args = append(args, refSpecs...)
 
 		if _, err := git.Run(ctx, args...); err != nil {
@@ -406,11 +443,6 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 			}
 		}
 		return nil
-	}
-
-	runFetchTags := func() error {
-		// Keep the hot path tag-free and only hydrate local tag refs when explicitly requested.
-		return runFetch([]string{"refs/tags/*:refs/tags/*"})
 	}
 
 	verifyFetchedSHAs := func(expectedRefs []*RemoteGitRef) error {
@@ -429,45 +461,80 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 		return nil
 	}
 
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, repo.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
+	fetchFromSource := func(source string) error {
+		if len(shaRefSpecs) > 0 {
+			err := runFetch(source, shaRefSpecs)
+			if err != nil {
+				if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
+					return err
+				}
 
-	if len(shaRefSpecs) > 0 {
-		err = runFetch(shaRefSpecs)
+				namedSpecs := namedFetchRefSpecs(refs)
+				if len(namedSpecs) == 0 {
+					return err
+				}
+
+				logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "source", source, "refspec_count", len(namedSpecs))
+				if retryErr := runFetch(source, namedSpecs); retryErr != nil {
+					return fmt.Errorf("sha fetch failed: %w; named-ref retry failed: %w", err, retryErr)
+				}
+				if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
+					return fmt.Errorf("named-ref retry verification failed: %w", verifyErr)
+				}
+				logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "source", source, "refspec_count", len(namedSpecs))
+			}
+		}
+
+		if includeTags {
+			if tagErr := runFetch(source, []string{"refs/tags/*:refs/tags/*"}); tagErr != nil {
+				return fmt.Errorf("hydrate tags: %w", tagErr)
+			}
+		}
+
+		return nil
+	}
+
+	withOriginServices := func(fn func() error) error {
+		query, err := CurrentQuery(ctx)
 		if err != nil {
-			if !errors.Is(err, gitutil.ErrSHAFetchUnsupported) {
-				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
-			}
-
-			namedSpecs := namedFetchRefSpecs(refs)
-			if len(namedSpecs) == 0 {
-				return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
-			}
-
-			logger.Debug("git fetch by sha failed; retrying with named refs", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
-			if retryErr := runFetch(namedSpecs); retryErr != nil {
-				return fmt.Errorf("failed to fetch remote %s: sha fetch failed: %w; named-ref retry failed: %w", repo.URL.Remote(), err, retryErr)
-			}
-			if verifyErr := verifyFetchedSHAs(refs); verifyErr != nil {
-				return fmt.Errorf("failed to fetch remote %s: named-ref retry verification failed: %w", repo.URL.Remote(), verifyErr)
-			}
-			logger.Debug("git fetch named-ref retry succeeded", "remote", repo.URL.Remote(), "refspec_count", len(namedSpecs))
+			return err
 		}
+		svcs, err := query.Services(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get services: %w", err)
+		}
+		detach, _, err := svcs.StartBindings(ctx, repo.Services)
+		if err != nil {
+			return err
+		}
+		defer detach()
+		return fn()
 	}
 
-	if includeTags {
-		if tagErr := runFetchTags(); tagErr != nil {
-			return fmt.Errorf("failed to hydrate tags for remote %s: %w", repo.URL.Remote(), tagErr)
+	if bundlePath, ok, err := repo.gitBundleRemote(); err != nil {
+		return err
+	} else if ok {
+		err := fetchFromSource(bundlePath)
+		if err == nil {
+			return nil
 		}
+
+		logger.Warn("git bundle fetch failed; falling back to remote", "remote", repo.URL.Remote(), "bundle", bundlePath, "error", err)
+		if fallbackErr := withOriginServices(func() error {
+			return fetchFromSource("origin")
+		}); fallbackErr != nil {
+			return fmt.Errorf("failed to fetch remote %s: bundle fetch failed: %w; remote fallback failed: %w", repo.URL.Remote(), err, fallbackErr)
+		}
+		repo.startBundleRefresh(ctx, "fetch-fallback")
+		return nil
 	}
 
+	if err := withOriginServices(func() error {
+		return fetchFromSource("origin")
+	}); err != nil {
+		return fmt.Errorf("failed to fetch remote %s: %w", repo.URL.Remote(), err)
+	}
+	repo.startBundleRefresh(ctx, "fetch-miss")
 	return nil
 }
 
@@ -573,6 +640,169 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, g bksession.Gro
 	}
 
 	return fn(dir)
+}
+
+func (repo *RemoteGitRepository) gitBundlePath() string {
+	return filepath.Join(gitBundleDir, hashutil.HashStrings(repo.URL.Remote()).Encoded()+".bundle")
+}
+
+func (repo *RemoteGitRepository) gitBundleRemote() (string, bool, error) {
+	bundlePath := repo.gitBundlePath()
+	if _, err := os.Stat(bundlePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("stat git bundle %s: %w", bundlePath, err)
+	}
+	return bundlePath, true, nil
+}
+
+func (repo *RemoteGitRepository) gitBundleCacheScope() (string, error) {
+	bundlePath, ok, err := repo.gitBundleRemote()
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "bundle:none", nil
+	}
+
+	info, err := os.Stat(bundlePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "bundle:none", nil
+		}
+		return "", fmt.Errorf("stat git bundle %s: %w", bundlePath, err)
+	}
+
+	return strings.Join([]string{
+		"bundle",
+		bundlePath,
+		strconv.FormatInt(info.Size(), 10),
+		strconv.FormatInt(info.ModTime().UnixNano(), 10),
+	}, ":"), nil
+}
+
+func (repo *RemoteGitRepository) startBundleRefresh(ctx context.Context, reason string) {
+	bundlePath := repo.gitBundlePath()
+	if _, loaded := gitBundleRefreshJobs.LoadOrStore(bundlePath, struct{}{}); loaded {
+		return
+	}
+
+	go func() {
+		defer gitBundleRefreshJobs.Delete(bundlePath)
+
+		bgctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gitBundleRefreshTimeout)
+		defer cancel()
+
+		appendGitBundleStatus("start", bundlePath, nil)
+		err := repo.refreshBundle(bgctx)
+		appendGitBundleStatus("done", bundlePath, err)
+
+		logger := slog.SpanLogger(bgctx, InstrumentationLibrary)
+		if err != nil {
+			logger.Warn("git bundle refresh failed", "remote", repo.URL.Remote(), "bundle", bundlePath, "reason", reason, "error", err)
+			return
+		}
+		logger.Debug("git bundle refresh completed", "remote", repo.URL.Remote(), "bundle", bundlePath, "reason", reason)
+	}()
+}
+
+func (repo *RemoteGitRepository) QueueBundleRefresh(ctx context.Context, reason string) {
+	repo.startBundleRefresh(ctx, reason)
+}
+
+func (repo *RemoteGitRepository) refreshBundle(ctx context.Context) error {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	svcs, err := query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, repo.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	git, cleanup, err := repo.setup(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	return mirrorGitRemoteToBundle(ctx, git, repo.URL.Remote(), repo.gitBundlePath())
+}
+
+func appendGitBundleStatus(event, bundlePath string, err error) {
+	f, openErr := os.OpenFile(gitBundleStatusPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if openErr != nil {
+		slog.Warn("failed to open git bundle status file", "path", gitBundleStatusPath, "error", openErr)
+		return
+	}
+	defer f.Close()
+
+	msg := fmt.Sprintf("%s %s %s", time.Now().Format(time.RFC3339Nano), event, bundlePath)
+	if err != nil {
+		msg += fmt.Sprintf(" error=%q", err.Error())
+	}
+	msg += "\n"
+
+	if _, writeErr := io.WriteString(f, msg); writeErr != nil {
+		slog.Warn("failed to append git bundle status", "path", gitBundleStatusPath, "error", writeErr)
+	}
+}
+
+func mirrorGitRemoteToBundle(ctx context.Context, git *gitutil.GitCLI, remoteURL, bundlePath string) error {
+	remote, err := git.LsRemote(ctx, remoteURL)
+	if err != nil {
+		return fmt.Errorf("ls-remote for bundle refresh: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(bundlePath), 0o700); err != nil {
+		return fmt.Errorf("create git bundle dir: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp(filepath.Dir(bundlePath), "git-bundle-")
+	if err != nil {
+		return fmt.Errorf("create temp dir for bundle refresh: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	mirrorDir := filepath.Join(tmpDir, "mirror.git")
+	mirrorGit := git.New(gitutil.WithGitDir(mirrorDir))
+
+	if _, err := mirrorGit.Run(ctx, "-c", "init.defaultBranch=main", "init", "--bare", "--quiet"); err != nil {
+		return fmt.Errorf("init mirror repo for bundle refresh: %w", err)
+	}
+	if _, err := mirrorGit.Run(ctx, "remote", "add", "origin", remoteURL); err != nil {
+		return fmt.Errorf("add origin to mirror repo: %w", err)
+	}
+	if _, err := mirrorGit.Run(ctx, "fetch", "--force", "--prune", "origin", "+refs/*:refs/*"); err != nil {
+		return fmt.Errorf("fetch mirror refs for bundle refresh: %w", err)
+	}
+
+	switch {
+	case remote.Symrefs["HEAD"] != "":
+		if _, err := mirrorGit.Run(ctx, "symbolic-ref", "HEAD", remote.Symrefs["HEAD"]); err != nil {
+			return fmt.Errorf("set mirror HEAD to %s: %w", remote.Symrefs["HEAD"], err)
+		}
+	case remote.Get("HEAD") != nil:
+		if _, err := mirrorGit.Run(ctx, "update-ref", "HEAD", remote.Get("HEAD").SHA); err != nil {
+			return fmt.Errorf("set mirror HEAD to %s: %w", remote.Get("HEAD").SHA, err)
+		}
+	}
+
+	tmpBundlePath := filepath.Join(tmpDir, "repo.bundle")
+	if _, err := mirrorGit.Run(ctx, "bundle", "create", tmpBundlePath, "--all"); err != nil {
+		return fmt.Errorf("create git bundle: %w", err)
+	}
+	if err := os.Rename(tmpBundlePath, bundlePath); err != nil {
+		return fmt.Errorf("install git bundle: %w", err)
+	}
+
+	return nil
 }
 
 func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {

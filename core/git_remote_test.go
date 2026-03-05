@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -122,4 +124,55 @@ func TestNamedFetchRefSpecsChangesWithPinnedSHA(t *testing.T) {
 	require.Len(t, baseSpecs, 1)
 	require.Len(t, updatedSpecs, 1)
 	require.NotEqual(t, baseSpecs[0], updatedSpecs[0], "fallback destination should track pinned ref+sha pair")
+}
+
+func TestMirrorGitRemoteToBundleSupportsLsRemoteAndFetch(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "src")
+
+	runGitCmd(t, tmpDir, "init", "--initial-branch=main", srcDir)
+	runGitCmd(t, srcDir, "config", "user.email", "test@dagger.io")
+	runGitCmd(t, srcDir, "config", "user.name", "Test User")
+	runGitCmd(t, srcDir, "commit", "--allow-empty", "-m", "init")
+	runGitCmd(t, srcDir, "branch", "feature")
+	runGitCmd(t, srcDir, "tag", "v1.0.0")
+
+	commitSHA := strings.TrimSpace(runGitCmd(t, srcDir, "rev-parse", "HEAD"))
+	bundlePath := filepath.Join(tmpDir, "git-bundles", "repo.bundle")
+
+	err := mirrorGitRemoteToBundle(ctx, gitutil.NewGitCLI(), srcDir, bundlePath)
+	require.NoError(t, err)
+
+	remote, err := gitutil.NewGitCLI().LsRemote(ctx, bundlePath)
+	require.NoError(t, err)
+	require.NotNil(t, remote.Get("HEAD"))
+	require.NotNil(t, remote.Get("refs/heads/main"))
+	require.NotNil(t, remote.Get("refs/heads/feature"))
+	require.NotNil(t, remote.Get("refs/tags/v1.0.0"))
+	require.Equal(t, commitSHA, remote.Get("HEAD").SHA)
+	require.Equal(t, commitSHA, remote.Get("refs/heads/main").SHA)
+	require.Equal(t, commitSHA, remote.Get("refs/heads/feature").SHA)
+	require.Equal(t, commitSHA, remote.Get("refs/tags/v1.0.0").SHA)
+
+	dstDir := filepath.Join(tmpDir, "dst.git")
+	runGitCmd(t, tmpDir, "init", "--bare", dstDir)
+
+	dstGit := gitutil.NewGitCLI(gitutil.WithGitDir(dstDir))
+	_, err = dstGit.Run(ctx, "fetch", bundlePath, commitSHA)
+	require.NoError(t, err)
+
+	fetchedSHA, err := dstGit.Run(ctx, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
+	require.NoError(t, err)
+	require.Equal(t, commitSHA, strings.TrimSpace(string(fetchedSHA)))
+}
+
+func runGitCmd(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %s failed: %s", strings.Join(args, " "), out)
+	return string(out)
 }

@@ -728,7 +728,22 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	repo := parent.Self()
 	ref, err := repo.Remote.Lookup(args.Name)
 	if err != nil {
-		return inst, err
+		remoteBackend, ok := repo.Backend.(*core.RemoteGitRepository)
+		if !ok {
+			return inst, err
+		}
+
+		freshRemote, refreshErr := remoteBackend.LiveRemote(ctx)
+		if refreshErr != nil {
+			return inst, err
+		}
+		repo.Remote = freshRemote
+		remoteBackend.QueueBundleRefresh(ctx, "ref-lookup-fallback")
+
+		ref, err = repo.Remote.Lookup(args.Name)
+		if err != nil {
+			return inst, err
+		}
 	}
 	if args.Commit != "" && args.Commit != ref.SHA {
 		ref.SHA = args.Commit
