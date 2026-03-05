@@ -10,6 +10,11 @@ CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
 VOLUME=$CONTAINER
 IMAGE=${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}
 
+VARNISH=
+if [[ "${DAGGER_VARNISH:-}" == "1" ]]; then
+    VARNISH=--varnish
+fi
+
 cli --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" |\
     dev-binaries --platform=current |\
     export ./bin &
@@ -31,7 +36,8 @@ engine-dev |\
         --debug \
         ${DAGGER_EXTRA_HOSTS:+--extra-hosts=${DAGGER_EXTRA_HOSTS-}} \
         ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
-        ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
+        ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} \
+        ${VARNISH:+$VARNISH} &
 start_pid=$!
 
 .wait $cli_pid $engine_pid $start_pid

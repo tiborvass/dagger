@@ -24,7 +24,7 @@ Defaults:
 
 - Container name: `dagger-git-varnish`
 - Volume name: `dagger-git-varnish-cache`
-- Port: `6084`
+- Port: `6081`
 - Cache backend: file storage in Docker volume (`/var/lib/varnish/cache.bin`)
 
 Optional environment variables:
@@ -50,7 +50,7 @@ This removes only the container. The Docker volume remains, so cache persists ac
 Example value:
 
 ```bash
-DAGGER_VARNISH=http://host.docker.internal:6084
+DAGGER_VARNISH=http://host.docker.internal:6081
 ```
 
 Note: with `_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-dev-tibor`, setting `DAGGER_VARNISH` only on the CLI command does not reconfigure an already running engine container.

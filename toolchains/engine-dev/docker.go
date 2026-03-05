@@ -99,6 +99,9 @@ func (e LoadedEngine) Start(
 
 	// +optional
 	extraHosts []string,
+
+	// +optional
+	varnish bool,
 ) error {
 	loader := e.Loader
 
@@ -132,6 +135,12 @@ func (e LoadedEngine) Start(
 
 	if len(extraHosts) > 0 {
 		args = append(args, "--add-host", strings.Join(extraHosts, ","))
+	}
+
+	if varnish {
+		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+		args = append(args, "-e", "DAGGER_VARNISH")
+		loader = loader.WithEnvVariable("DAGGER_VARNISH", "http://host.docker.internal:6081")
 	}
 
 	args = append(args, []string{
