@@ -180,19 +180,7 @@ func (repo *RemoteGitRepository) runLsRemote(ctx context.Context) (*gitutil.Remo
 	if bundlePath, ok, err := repo.gitBundleRemote(); err != nil {
 		return nil, err
 	} else if ok {
-		remote, bundleErr := gitutil.NewGitCLI().LsRemote(ctx, bundlePath)
-		if bundleErr == nil {
-			return remote, nil
-		}
-
-		slog.Warn("git bundle ls-remote failed; falling back to remote", "remote", repo.URL.Remote(), "bundle", bundlePath, "error", bundleErr)
-
-		remote, err := repo.runLiveLsRemote(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("bundle ls-remote failed: %w; remote fallback failed: %w", bundleErr, err)
-		}
-		repo.startBundleRefresh(ctx, "ls-remote-fallback")
-		return remote, nil
+		return gitutil.NewGitCLI().LsRemote(ctx, bundlePath)
 	}
 
 	return repo.runLiveLsRemote(ctx)
@@ -224,10 +212,6 @@ func (repo *RemoteGitRepository) runLiveLsRemote(ctx context.Context) (*gitutil.
 		return nil, err
 	}
 	return remote, nil
-}
-
-func (repo *RemoteGitRepository) LiveRemote(ctx context.Context) (*gitutil.Remote, error) {
-	return repo.runLiveLsRemote(ctx)
 }
 
 func (repo *RemoteGitRepository) Dirty(ctx context.Context) (inst dagql.ObjectResult[*Directory], _ error) {
@@ -514,19 +498,7 @@ func (repo *RemoteGitRepository) fetch(ctx context.Context, git *gitutil.GitCLI,
 	if bundlePath, ok, err := repo.gitBundleRemote(); err != nil {
 		return err
 	} else if ok {
-		err := fetchFromSource(bundlePath)
-		if err == nil {
-			return nil
-		}
-
-		logger.Warn("git bundle fetch failed; falling back to remote", "remote", repo.URL.Remote(), "bundle", bundlePath, "error", err)
-		if fallbackErr := withOriginServices(func() error {
-			return fetchFromSource("origin")
-		}); fallbackErr != nil {
-			return fmt.Errorf("failed to fetch remote %s: bundle fetch failed: %w; remote fallback failed: %w", repo.URL.Remote(), err, fallbackErr)
-		}
-		repo.startBundleRefresh(ctx, "fetch-fallback")
-		return nil
+		return fetchFromSource(bundlePath)
 	}
 
 	if err := withOriginServices(func() error {
@@ -705,10 +677,6 @@ func (repo *RemoteGitRepository) startBundleRefresh(ctx context.Context, reason 
 		}
 		logger.Debug("git bundle refresh completed", "remote", repo.URL.Remote(), "bundle", bundlePath, "reason", reason)
 	}()
-}
-
-func (repo *RemoteGitRepository) QueueBundleRefresh(ctx context.Context, reason string) {
-	repo.startBundleRefresh(ctx, reason)
 }
 
 func (repo *RemoteGitRepository) refreshBundle(ctx context.Context) error {
