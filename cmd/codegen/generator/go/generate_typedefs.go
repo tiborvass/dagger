@@ -2,6 +2,8 @@ package gogenerator
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"go/token"
 	"io/fs"
@@ -60,8 +62,30 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 		return nil, fmt.Errorf("glob go files: %w", err)
 	}
 
+	if len(initialGoFiles) == 0 {
+		if g.Config.Dag == nil {
+			return nil, fmt.Errorf("dagger client is required to generate empty type defs")
+		}
+		id, err := g.Config.Dag.Module().ID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create empty module type defs: %w", err)
+		}
+		jsonID, err := json.Marshal(id)
+		if err != nil {
+			return nil, fmt.Errorf("marshal empty module type defs: %w", err)
+		}
+		if err := mfs.WriteFile(g.Config.TypeDefsPath, jsonID, 0600); err != nil {
+			return nil, fmt.Errorf("write empty module type defs: %w", err)
+		}
+		return res, nil
+	}
+
 	genFile := filepath.Join(g.Config.OutputDir, outDir, "internal/dagger", ClientGenFile)
 	if _, err := os.Stat(genFile); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("stat generated client file %q: %w", genFile, err)
+		}
+
 		// assume package main, default for modules
 		pkgInfo.PackageName = "main"
 		// generate an initial dagger.gen.go from the base Dagger API
@@ -72,15 +96,6 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 		partial = true
 	}
 
-	if len(initialGoFiles) == 0 {
-		// write an initial main.go if no main pkg exists yet
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
-			return nil, err
-		}
-
-		// main.go is actually an input to codegen, so this requires another pass
-		partial = true
-	}
 	if partial {
 		res.NeedRegenerate = true
 		return res, nil

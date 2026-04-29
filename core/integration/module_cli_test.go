@@ -829,6 +829,24 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
 	})
 
+	t.Run("installing empty Go dependency skips starter template", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
+			WithoutFile("/work/dep/main.go").
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("install", "./dep")).
+			WithExec([]string{"sh", "-c", "test ! -f internal/dagger/dep.gen.go || ! grep -q ContainerEcho internal/dagger/dep.gen.go"})
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, `"dep"`)
+	})
+
 	t.Run("installing a dependency with implicit duplicate name is not allowed", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

@@ -72,6 +72,10 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 
 	genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
 	if _, err := os.Stat(genFile); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("stat generated client file %q: %w", genFile, err)
+		}
+
 		// assume package main, default for modules
 		pkgInfo.PackageName = "main"
 

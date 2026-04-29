@@ -2305,6 +2305,40 @@ func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {
 	return src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls)
 }
 
+func (s *moduleSourceSchema) validateExistingSDKSource(
+	ctx context.Context,
+	src *core.ModuleSource,
+) error {
+	if src.SDK == nil || !src.ConfigExists {
+		return nil
+	}
+
+	srcSubpath := src.SourceSubpath
+	if srcSubpath == "" {
+		srcSubpath = src.SourceRootSubpath
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dag server: %w", err)
+	}
+
+	var srcDir dagql.ObjectResult[*core.Directory]
+	if err := dag.Select(ctx, src.ContextDirectory, &srcDir, dagql.Selector{
+		Field: "directory",
+		Args:  []dagql.NamedInput{{Name: "path", Value: dagql.String(srcSubpath)}},
+	}); err != nil {
+		return fmt.Errorf("module %q source directory %q is not available: %w", src.ModuleName, srcSubpath, err)
+	}
+
+	var entries dagql.Array[dagql.String]
+	if err := dag.Select(ctx, srcDir, &entries, dagql.Selector{Field: "entries"}); err != nil {
+		return fmt.Errorf("module %q source directory %q is not available: %w", src.ModuleName, srcSubpath, err)
+	}
+
+	return nil
+}
+
 func (s *moduleSourceSchema) runCodegen(
 	ctx context.Context,
 	srcInst dagql.ObjectResult[*core.ModuleSource],
@@ -2312,6 +2346,10 @@ func (s *moduleSourceSchema) runCodegen(
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return res, fmt.Errorf("failed to get current dag: %w", err)
+	}
+
+	if err := s.validateExistingSDKSource(ctx, srcInst.Self()); err != nil {
+		return res, err
 	}
 
 	// load the deps as actual Modules
@@ -3024,6 +3062,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 				return inst, fmt.Errorf("unable to set toolchains with blueprint: %w", err)
 			}
 		}
+	}
+	if err := s.validateExistingSDKSource(ctx, execSrc.Self()); err != nil {
+		return inst, err
 	}
 
 	mod := &core.Module{
