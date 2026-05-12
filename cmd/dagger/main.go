@@ -76,6 +76,7 @@ var (
 	dotFocusField     string
 	dotShowInternal   bool
 
+	stdinIsTTY  = isatty.IsTerminal(os.Stdin.Fd())
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 

@@ -887,6 +887,11 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 	description := descBuf.String()
 
 	if !autoApply {
+		if !canPromptChangeset() {
+			fmt.Fprintln(stderr, "warning: cannot prompt to apply changes without a TTY; discarding changeset")
+			return nil
+		}
+
 		var confirm bool
 		form := idtui.NewForm(
 			huh.NewGroup(
@@ -912,6 +917,10 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 		return err
 	}
 	return nil
+}
+
+func canPromptChangeset() bool {
+	return stdinIsTTY && hasTTY
 }
 
 // startInteractivePromptMode starts the interactive shell with the returned LLM assigned as $agent
