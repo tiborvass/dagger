@@ -821,28 +821,13 @@ func (node *ModTreeNode) PathString() string {
 }
 
 func (node *ModTreeNode) moduleLocalPathString() string {
-	path := node.Path()
-	if node.hasWorkspaceModulePrefix() {
-		path = path[1:]
+	var path ModTreePath
+	for n := node; n != nil && n.Parent != nil && n.Parent.Module != nil; n = n.Parent {
+		path = append(path, n.Name)
 	}
+	slices.Reverse(path)
 
 	return strings.Join(path.CliCase(), ":")
-}
-
-func (node *ModTreeNode) hasWorkspaceModulePrefix() bool {
-	if node.Module == nil {
-		return false
-	}
-
-	root := node
-	for root.Parent != nil && root.Parent.Parent != nil {
-		root = root.Parent
-	}
-
-	return root.Parent != nil &&
-		root.Parent.Module == nil &&
-		root.Parent.Name == "" &&
-		root.Name == node.Module.Name()
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)

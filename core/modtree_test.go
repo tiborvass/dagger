@@ -371,6 +371,19 @@ func TestModTreeNodeModuleLocalPathString(t *testing.T) {
 			want: "assert-template",
 		},
 		{
+			name: "workspace alias prefix",
+			node: &ModTreeNode{
+				Parent: &ModTreeNode{
+					Parent: &ModTreeNode{},
+					Name:   "helm",
+					Module: &Module{NameField: "dagger-helm"},
+				},
+				Name:   "lint",
+				Module: &Module{NameField: "dagger-helm"},
+			},
+			want: "lint",
+		},
+		{
 			name: "nested workspace module prefix",
 			node: &ModTreeNode{
 				Parent: &ModTreeNode{
