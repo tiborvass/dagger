@@ -2145,6 +2145,10 @@ func (srv *Server) CloudEngineClient(
 			Module:   module,
 			Function: function,
 			ExecCmd:  execCmd,
+			// Workspace checks scale out by re-entering through currentWorkspace
+			// in the nested engine. With no explicit module, preserve the
+			// caller's workspace module loading behavior.
+			LoadWorkspaceModules: module == "",
 
 			CloudAuth: parentClient.clientMetadata.CloudAuth,
 

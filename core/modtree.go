@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/querybuilder"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -132,9 +130,7 @@ func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string
 func (node *ModTreeNode) RunGeneratorAsCheck(ctx context.Context, include, exclude []string) error {
 	return node.runAsCheck(ctx,
 		func(n *ModTreeNode) bool { return n.IsGenerator },
-		func(n *ModTreeNode, ctx context.Context) (bool, error) {
-			return n.tryRunGeneratorAsCheckScaleOut(ctx)
-		},
+		nil,
 		func(n *ModTreeNode, ctx context.Context) error {
 			return n.runGeneratorAsCheckLocally(ctx)
 		},
@@ -153,7 +149,7 @@ func (node *ModTreeNode) runAsCheck(
 		isLeaf,
 		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			// Try scale-out if enabled (will be false for scaled-out sessions)
-			if clientMD != nil && clientMD.EnableCloudScaleOut {
+			if clientMD != nil && clientMD.EnableCloudScaleOut && tryScaleOut != nil {
 				if ok, err := tryScaleOut(n, ctx); ok {
 					return err
 				}
@@ -194,49 +190,6 @@ func (node *ModTreeNode) runGeneratorAsCheckLocally(ctx context.Context) error {
 	return nil
 }
 
-func (node *ModTreeNode) tryRunGeneratorAsCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return true, err
-	}
-
-	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
-		node.RootAddress(),
-		node.PathString(),
-		nil,
-	)
-	if err != nil {
-		return true, fmt.Errorf("engine-to-engine connect: %w", err)
-	}
-	if !useCloud {
-		return false, nil
-	}
-	defer func() {
-		rerr = errors.Join(rerr, cloudClient.Close())
-	}()
-
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
-	if err != nil {
-		return true, err
-	}
-
-	query = query.Select("generator").Arg("name", node.PathString())
-	query = query.Select("run")
-	query = query.Select("isEmpty")
-
-	var empty bool
-	if err := query.Bind(&empty).Execute(ctx); err != nil {
-		return true, err
-	}
-
-	if !empty {
-		return true, fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
-			node.PathString(), node.PathString())
-	}
-
-	return true, nil
-}
-
 func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {
 	var status dagql.AnyResult
 	if err := node.DagqlValue(ctx, &status); err != nil {
@@ -268,7 +221,7 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 	}
 
 	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
-		node.RootAddress(),
+		"",
 		node.PathString(),
 		nil,
 	)
@@ -282,28 +235,42 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 		rerr = errors.Join(rerr, cloudClient.Close())
 	}()
 
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
-	if err != nil {
+	var checks []struct {
+		Passed bool `json:"passed"`
+		Error  *struct {
+			ID string `json:"id"`
+		} `json:"error"`
+	}
+
+	query := cloudClient.Dagger().QueryBuilder().
+		Select("currentWorkspace").
+		Select("checks").
+		Arg("include", []string{node.PathString()}).
+		Arg("noGenerate", true).
+		Select("run").
+		Select("list").
+		Bind(&checks).
+		SelectMultiple("passed", "error { id }")
+
+	if err := query.Execute(ctx); err != nil {
 		return true, err
 	}
 
-	query = query.Select("check").Arg("name", node.PathString())
-	query = query.Select("run")
-	query = query.Select("error")
-	query = query.Select("id")
-
-	var errID string
-	if err := query.Bind(&errID).Execute(ctx); err != nil {
-		return true, err
+	switch len(checks) {
+	case 0:
+		return true, fmt.Errorf("check %q not found in workspace", node.PathString())
+	case 1:
+	default:
+		return true, fmt.Errorf("multiple checks found with name %q in workspace", node.PathString())
 	}
 
-	if errID != "" {
+	if checks[0].Error != nil && checks[0].Error.ID != "" {
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return true, err
 		}
 		var idp call.ID
-		if err := idp.Decode(errID); err != nil {
+		if err := idp.Decode(checks[0].Error.ID); err != nil {
 			return true, err
 		}
 		errObj, err := dagql.NewID[*Error](&idp).Load(ctx, srv)
@@ -311,6 +278,9 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 			return true, err
 		}
 		return true, errObj.Self()
+	}
+	if !checks[0].Passed {
+		return true, fmt.Errorf("check %q failed", node.PathString())
 	}
 
 	return true, nil
@@ -506,39 +476,6 @@ func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (*Changeset, e
 		return nil, err
 	}
 	return changes.Self(), nil
-}
-
-// buildScaleOutModuleQuery builds a query to load a module for scale-out execution.
-// It handles all module source kinds (Local, Git, Dir) and returns a query
-// positioned at the "asModule" selection, ready for check/generator-specific queries.
-func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection) (*querybuilder.Selection, error) {
-	modSrc := node.Module.Source.Value.Self()
-	switch modSrc.Kind {
-	case ModuleSourceKindLocal:
-		query = query.Select("moduleSource").
-			Arg("refString", filepath.Join(
-				modSrc.Local.ContextDirectoryPath,
-				modSrc.SourceRootSubpath,
-			))
-	case ModuleSourceKindGit:
-		query = query.Select("moduleSource").
-			Arg("refString", modSrc.AsString()).
-			Arg("refPin", modSrc.Git.Commit).
-			Arg("requireKind", modSrc.Kind)
-	case ModuleSourceKindDir:
-		dirID, err := modSrc.DirSrc.OriginalContextDir.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get dir ID: %w", err)
-		}
-		dirIDEnc, err := dirID.Encode()
-		if err != nil {
-			return nil, fmt.Errorf("encode dir ID: %w", err)
-		}
-		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
-		query = query.Select("asModuleSource").
-			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
-	}
-	return query.Select("asModule"), nil
 }
 
 // Initialize a standalone dagql server for querying the given module
