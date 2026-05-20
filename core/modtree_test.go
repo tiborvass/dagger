@@ -339,3 +339,72 @@ func (s *ModTreePathTestSuite) TestGlob(ctx context.Context, t *testctx.T) {
 		})
 	}
 }
+
+func TestModTreeNodeModuleLocalPathString(t *testing.T) {
+	mod := &Module{NameField: "helm"}
+
+	testCases := []struct {
+		name string
+		node *ModTreeNode
+		want string
+	}{
+		{
+			name: "standalone module path",
+			node: &ModTreeNode{
+				Parent: &ModTreeNode{Module: mod},
+				Name:   "lint",
+				Module: mod,
+			},
+			want: "lint",
+		},
+		{
+			name: "workspace module prefix",
+			node: &ModTreeNode{
+				Parent: &ModTreeNode{
+					Parent: &ModTreeNode{},
+					Name:   "helm",
+					Module: mod,
+				},
+				Name:   "assertTemplate",
+				Module: mod,
+			},
+			want: "assert-template",
+		},
+		{
+			name: "nested workspace module prefix",
+			node: &ModTreeNode{
+				Parent: &ModTreeNode{
+					Parent: &ModTreeNode{
+						Parent: &ModTreeNode{},
+						Name:   "helm",
+						Module: mod,
+					},
+					Name:   "chart",
+					Module: mod,
+				},
+				Name:   "lint",
+				Module: mod,
+			},
+			want: "chart:lint",
+		},
+		{
+			name: "standalone function matching module name",
+			node: &ModTreeNode{
+				Parent: &ModTreeNode{
+					Parent: &ModTreeNode{Module: mod},
+					Name:   "helm",
+					Module: mod,
+				},
+				Name:   "lint",
+				Module: mod,
+			},
+			want: "helm:lint",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.node.moduleLocalPathString())
+		})
+	}
+}

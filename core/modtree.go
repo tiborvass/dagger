@@ -220,7 +220,7 @@ func (node *ModTreeNode) tryRunGeneratorAsCheckScaleOut(ctx context.Context) (_ 
 		return true, err
 	}
 
-	query = query.Select("generator").Arg("name", node.PathString())
+	query = query.Select("generator").Arg("name", node.moduleLocalPathString())
 	query = query.Select("run")
 	query = query.Select("isEmpty")
 
@@ -287,7 +287,7 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 		return true, err
 	}
 
-	query = query.Select("check").Arg("name", node.PathString())
+	query = query.Select("check").Arg("name", node.moduleLocalPathString())
 	query = query.Select("run")
 	query = query.Select("error")
 	query = query.Select("id")
@@ -541,7 +541,7 @@ func (node *ModTreeNode) tryRunGeneratorScaleOut(ctx context.Context) (_ bool, _
 		return true, nil, err
 	}
 
-	query = query.Select("generator").Arg("name", node.PathString())
+	query = query.Select("generator").Arg("name", node.moduleLocalPathString())
 	query = query.Select("run")
 	query = query.Select("changes")
 
@@ -818,6 +818,31 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 
 func (node *ModTreeNode) PathString() string {
 	return strings.Join(node.Path().CliCase(), ":")
+}
+
+func (node *ModTreeNode) moduleLocalPathString() string {
+	path := node.Path()
+	if node.hasWorkspaceModulePrefix() {
+		path = path[1:]
+	}
+
+	return strings.Join(path.CliCase(), ":")
+}
+
+func (node *ModTreeNode) hasWorkspaceModulePrefix() bool {
+	if node.Module == nil {
+		return false
+	}
+
+	root := node
+	for root.Parent != nil && root.Parent.Parent != nil {
+		root = root.Parent
+	}
+
+	return root.Parent != nil &&
+		root.Parent.Module == nil &&
+		root.Parent.Name == "" &&
+		root.Name == node.Module.Name()
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
