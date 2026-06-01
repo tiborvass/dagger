@@ -24,7 +24,6 @@
 //go:test:include ../../toolchains/cli-dev
 //go:test:include ../../toolchains/go
 //go:test:include ../../util
-//go:test:include ../../version
 package helm
 
 import (
