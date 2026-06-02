@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"dagger/engine-dev/internal/dagger"
 
@@ -169,23 +168,6 @@ func (dev *EngineDev) test(
 		args = append(args, "-v")
 	}
 
-	// Add ldflags
-	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		return dag.Container().WithError(err.Error())
-	}
-	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
-	tag, err := dag.Version().ImageTag(ctx)
-	if err != nil {
-		return dag.Container().WithError(err.Error())
-	}
-	ldflags := []string{
-		"-X", "github.com/dagger/dagger/engine.Version=" + version,
-		"-X", "github.com/dagger/dagger/engine.Tag=" + tag,
-	}
-	args = append(args, "-ldflags", strings.Join(ldflags, " "))
-
 	// All following are go test flags
 	if opts.failfast {
 		args = append(args, "-failfast")
@@ -252,7 +234,6 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 			"",    // platform
 			false, // gpuSupport
 			"",    // version
-			"",    // tag
 		)
 	if err != nil {
 		return nil, "", err
