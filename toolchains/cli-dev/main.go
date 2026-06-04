@@ -25,6 +25,7 @@ func New(
 	//   "!**/go.sum",
 	//   "!**/go.mod",
 	//   "!**/*.go",
+	//   "!**/VERSION",
 	//   "!vendor/**/*",
 	//   "!**.graphql",
 	//   "!.changes",
