@@ -49,6 +49,10 @@ func New(
 	// +optional
 	version string,
 ) (*CliDev, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
 	var values []string

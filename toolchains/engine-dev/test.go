@@ -60,7 +60,7 @@ func (dev *EngineDev) Test(
 	if err != nil {
 		return err
 	}
-	_, err = dev.test(ctx, ctr, &testOpts{
+	_, err = dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
@@ -111,7 +111,7 @@ func (dev *EngineDev) TestTelemetry(
 	if err != nil {
 		return nil, err
 	}
-	ran, err := dev.test(ctx, ctr, &testOpts{
+	ran, err := dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           "./dagql/idtui/",
@@ -147,7 +147,6 @@ type testOpts struct {
 }
 
 func (dev *EngineDev) test(
-	ctx context.Context,
 	// The test container to run the tests in
 	container *dagger.Container,
 	// Various test options

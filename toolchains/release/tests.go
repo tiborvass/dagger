@@ -16,6 +16,10 @@ func (r *Release) TestLocalRelease(
 	// Current engine version. The test runs the next patch (vX.Y.Z+1) on top.
 	version string,
 ) (*ReleaseTest, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	return &ReleaseTest{
 		Container: dag.EngineDev().Playground(
 			dagger.EngineDevPlaygroundOpts{Version: bumpVersionByPatch(version)},
