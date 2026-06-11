@@ -2,14 +2,64 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
+
+func TestV0216SchemaJSON(t *testing.T) {
+	got := canonicalJSON(t, schemaJSONForView(t, "v0.21.6"))
+
+	wantBytes, err := os.ReadFile("testdata/v0.21.6.json")
+	require.NoError(t, err)
+	want := canonicalJSON(t, wantBytes)
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("v0.21.6 schema JSON mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func schemaJSONForView(t *testing.T, view call.View) []byte {
+	t.Helper()
+
+	ctx := context.Background()
+	baseCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	ctx = dagql.ContextWithCache(ctx, baseCache)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "schema-json-client",
+		SessionID: "schema-json-session",
+	})
+	srv := &currentTypeDefsTestServer{}
+	root := core.NewRoot(srv)
+	coreSchemaBase, err := NewCoreSchemaBase(ctx, srv)
+	require.NoError(t, err)
+	dag, err := coreSchemaBase.Fork(ctx, root, view)
+	require.NoError(t, err)
+
+	schemaJSON, err := getSchemaJSON(nil, view, dag)
+	require.NoError(t, err)
+	return schemaJSON
+}
+
+func canonicalJSON(t *testing.T, data []byte) string {
+	t.Helper()
+
+	var v any
+	require.NoError(t, json.Unmarshal(data, &v))
+
+	canonical, err := json.MarshalIndent(v, "", "  ")
+	require.NoError(t, err)
+	return string(canonical) + "\n"
+}
 
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()

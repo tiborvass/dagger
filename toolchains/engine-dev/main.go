@@ -329,6 +329,49 @@ func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, erro
 	return introspectionJSON, nil
 }
 
+// Generate the latest full introspection JSON schema from the running dev engine.
+func (dev *EngineDev) SchemaJSON(
+	ctx context.Context,
+	// Name of the schema fixture to write under core/schema/testdata.
+	name string,
+) (*dagger.Changeset, error) {
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		return nil, fmt.Errorf("invalid schema name %q", name)
+	}
+
+	outputPath := filepath.Join("core", "schema", "testdata", name+".json")
+
+	schemaFile, err := dev.schemaJSONFile(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	after := dev.Source.WithFile(outputPath, schemaFile)
+	return after.Changes(dev.Source), nil
+}
+
+func (dev *EngineDev) schemaJSONFile(ctx context.Context) (*dagger.File, error) {
+	const schemaPath = "/schema.json"
+
+	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf(`query {
+  __schemaJSONFile {
+    export(path: %q)
+  }
+}`, schemaPath)
+
+	return playground.
+		WithNewFile("/schema-json.graphql", query).
+		WithExec([]string{"dagger", "query", "--no-mod", "--doc", "/schema-json.graphql"}).
+		File(schemaPath), nil
+}
+
 // Introspect the engine API schema, and return it as a graphql schema
 func (dev *EngineDev) GraphqlSchema(
 	ctx context.Context,
