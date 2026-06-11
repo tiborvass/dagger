@@ -143,6 +143,19 @@ func (s *querySchema) clientFilesyncMirror(ctx context.Context, parent dagql.Obj
 }
 
 func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]byte, error) {
+	introspectionResponse, err := getIntrospectionResponse(hiddenTypes, view, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	moduleSchemaJSON, err := json.Marshal(introspectionResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal introspection JSON: %w", err)
+	}
+	return moduleSchemaJSON, nil
+}
+
+func getIntrospectionResponse(hiddenTypes []string, view call.View, srv *dagql.Server) (codegenintrospection.Response, error) {
 	dagqlSchema := introspection.WrapSchema(srv.SchemaForView(view))
 
 	introspectionResponse := codegenintrospection.Response{
@@ -155,18 +168,18 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 	for _, dagqlType := range dagqlSchema.Types() {
 		codeGenType, err := core.DagqlToCodegenType(dagqlType)
 		if err != nil {
-			return nil, err
+			return codegenintrospection.Response{}, err
 		}
 		introspectionResponse.Schema.Types = append(introspectionResponse.Schema.Types, codeGenType)
 	}
 	directives, err := dagqlSchema.Directives()
 	if err != nil {
-		return nil, err
+		return codegenintrospection.Response{}, err
 	}
 	for _, dagqlDirective := range directives {
 		dd, err := core.DagqlToCodegenDirectiveDef(dagqlDirective)
 		if err != nil {
-			return nil, err
+			return codegenintrospection.Response{}, err
 		}
 		introspectionResponse.Schema.Directives = append(introspectionResponse.Schema.Directives, dd)
 	}
@@ -176,11 +189,7 @@ func getSchemaJSON(hiddenTypes []string, view call.View, srv *dagql.Server) ([]b
 		introspectionResponse.Schema.ScrubType(dagql.IDTypeNameForRawType(rawType))
 	}
 
-	moduleSchemaJSON, err := json.Marshal(introspectionResponse)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal introspection JSON: %w", err)
-	}
-	return moduleSchemaJSON, nil
+	return introspectionResponse, nil
 }
 
 type schemaJSONArgs struct {

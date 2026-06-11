@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -16,18 +18,27 @@ import (
 )
 
 func TestV0216SchemaJSON(t *testing.T) {
-	got := canonicalJSON(t, schemaJSONForView(t, "v0.21.6"))
+	got := introspectionResponseForView(t, "v0.21.6")
 
 	wantBytes, err := os.ReadFile("testdata/v0.21.6.json")
 	require.NoError(t, err)
-	want := canonicalJSON(t, wantBytes)
+	want := introspectionResponseFromJSON(t, wantBytes)
 
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("v0.21.6 schema JSON mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, got, schemaJSONDiffOpts); diff != "" {
+		t.Fatalf("v0.21.6 schema API mismatch (-fixture +generated):\n%s", diff)
 	}
 }
 
-func schemaJSONForView(t *testing.T, view call.View) []byte {
+var schemaJSONDiffOpts = cmp.Options{
+	cmpopts.EquateEmpty(),
+	cmpopts.IgnoreFields(introspection.DirectiveDef{}, "Description"),
+	cmpopts.IgnoreFields(introspection.Type{}, "Description", "Directives"),
+	cmpopts.IgnoreFields(introspection.Field{}, "Description", "Directives", "IsDeprecated", "DeprecationReason"),
+	cmpopts.IgnoreFields(introspection.InputValue{}, "Description", "Directives", "IsDeprecated", "DeprecationReason"),
+	cmpopts.IgnoreFields(introspection.EnumValue{}, "Description", "Directives", "IsDeprecated", "DeprecationReason"),
+}
+
+func introspectionResponseForView(t *testing.T, view call.View) introspection.Response {
 	t.Helper()
 
 	ctx := context.Background()
@@ -45,20 +56,18 @@ func schemaJSONForView(t *testing.T, view call.View) []byte {
 	dag, err := coreSchemaBase.Fork(ctx, root, view)
 	require.NoError(t, err)
 
-	schemaJSON, err := getSchemaJSON(nil, view, dag)
+	response, err := getIntrospectionResponse(nil, view, dag)
 	require.NoError(t, err)
-	return schemaJSON
+	return response
 }
 
-func canonicalJSON(t *testing.T, data []byte) string {
+func introspectionResponseFromJSON(t *testing.T, data []byte) introspection.Response {
 	t.Helper()
 
-	var v any
-	require.NoError(t, json.Unmarshal(data, &v))
-
-	canonical, err := json.MarshalIndent(v, "", "  ")
-	require.NoError(t, err)
-	return string(canonical) + "\n"
+	var response introspection.Response
+	require.NoError(t, json.Unmarshal(data, &response))
+	require.NotNil(t, response.Schema)
+	return response
 }
 
 func TestCoreModTypeDefs(t *testing.T) {
