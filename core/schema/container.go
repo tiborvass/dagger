@@ -551,7 +551,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the written directory (e.g., "/tmp/directory").`),
 				dagql.Arg("directory").Doc(`Identifier of the directory to write`).View(BeforeVersion("v0.19.0")),
-				dagql.Arg("source").Doc(`Identifier of the directory to write`).View(AfterVersion("v0.19.0")),
+				dagql.Arg("source").Doc(`Identifier of the directory to write`).View(SinceVersion("v0.19.0")),
 				dagql.Arg("exclude").Doc(`Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).`),
 				dagql.Arg("include").Doc(`Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).`),
 				dagql.Arg("gitignore").Doc(`Apply .gitignore rules when writing the directory.`),
@@ -885,7 +885,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("terminal", s.terminal).
-			View(AfterVersion("v0.12.0")).
+			View(SinceVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			Args(

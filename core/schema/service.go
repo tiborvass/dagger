@@ -22,7 +22,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 				`Be sure to set any exposed ports before this conversion.`),
 
 		dagql.NodeFunc("asService", s.containerAsService).
-			View(AfterVersion("v0.15.0")).
+			View(SinceVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`).
 			Args(
@@ -61,7 +61,7 @@ func (s *serviceSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("up", s.containerUp).
-			View(AfterVersion("v0.15.2")).
+			View(SinceVersion("v0.15.2")).
 			DoNotCache("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).

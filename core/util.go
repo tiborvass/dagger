@@ -279,7 +279,7 @@ func Supports(ctx context.Context, minVersion string) bool {
 	if curCall == nil {
 		return false
 	}
-	return AfterVersion(minVersion).Contains(
+	return SinceVersion(minVersion).Contains(
 		curCall.View,
 	)
 }
@@ -287,13 +287,13 @@ func Supports(ctx context.Context, minVersion string) bool {
 // AllVersion is a view that contains all versions.
 var AllVersion = dagql.AllView{}
 
-// AfterVersion is a view that checks if a target version is greater than *or*
+// SinceVersion is a view that checks if a target version is greater than *or*
 // equal to the filtered version.
-type AfterVersion string
+type SinceVersion string
 
-var _ dagql.ViewFilter = AfterVersion("")
+var _ dagql.ViewFilter = SinceVersion("")
 
-func (minVersion AfterVersion) Contains(version call.View) bool {
+func (minVersion SinceVersion) Contains(version call.View) bool {
 	if version == "" {
 		return true
 	}
@@ -314,7 +314,7 @@ func (maxVersion BeforeVersion) Contains(version call.View) bool {
 }
 
 var (
-	enumView = AfterVersion("v0.18.11")
+	enumView = SinceVersion("v0.18.11")
 )
 
 // RootPathWithoutFinalSymlink joins a path with a root, evaluating and bounding all

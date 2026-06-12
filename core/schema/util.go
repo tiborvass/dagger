@@ -98,4 +98,4 @@ func ptr[T any](v T) *T {
 var AllVersion = core.AllVersion
 
 type BeforeVersion = core.BeforeVersion
-type AfterVersion = core.AfterVersion
+type SinceVersion = core.SinceVersion
