@@ -185,7 +185,7 @@ func preferMultipleLines(text string) bool {
 }
 
 func formatInput(w io.Writer, input introspection.InputValue) {
-	fmt.Fprintf(w, "  %s: %s", input.Name, typeRefToString(input.TypeRef))
+	fmt.Fprintf(w, "  %s: %s", input.Name, input.TypeRef)
 	formatDefaultValue(w, input.DefaultValue)
 	formatDirectiveApplications(w, input.Directives)
 	fmt.Fprintln(w)
@@ -201,7 +201,7 @@ func formatField(w io.Writer, field *introspection.Field) {
 	fmt.Fprintf(w, "  %s", field.Name)
 	formatArgs(w, "  ", field.Args)
 	if field.TypeRef != nil {
-		fmt.Fprintf(w, ": %s", typeRefToString(field.TypeRef))
+		fmt.Fprintf(w, ": %s", field.TypeRef)
 	}
 	if len(field.Directives) > 0 {
 		formatDirectiveApplications(w, field.Directives)
@@ -239,7 +239,7 @@ func formatArgs(w io.Writer, indent string, args introspection.InputValues) {
 			formatDescription(w, indent+"  ", arg.Description)
 			fmt.Fprint(w, indent+"  ")
 		}
-		fmt.Fprintf(w, "%s: %s", arg.Name, typeRefToString(arg.TypeRef))
+		fmt.Fprintf(w, "%s: %s", arg.Name, arg.TypeRef)
 
 		formatDefaultValue(w, arg.DefaultValue)
 		formatDirectiveApplications(w, arg.Directives)
@@ -300,27 +300,6 @@ func formatDescribed[T any](w io.Writer, values []T, describe func(T) string, fn
 		if multiline && i < len(values)-1 {
 			fmt.Fprintln(w)
 		}
-	}
-}
-
-func typeRefToString(t *introspection.TypeRef) string {
-	if t == nil {
-		return "Unknown"
-	}
-
-	switch t.Kind {
-	case introspection.TypeKindNonNull:
-		if t.OfType != nil {
-			return typeRefToString(t.OfType) + "!"
-		}
-		return t.Name + "!"
-	case introspection.TypeKindList:
-		if t.OfType != nil {
-			return "[" + typeRefToString(t.OfType) + "]"
-		}
-		return "[" + t.Name + "]"
-	default:
-		return t.Name
 	}
 }
 

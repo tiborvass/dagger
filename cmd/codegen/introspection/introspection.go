@@ -79,6 +79,10 @@ type DirectiveDef struct {
 	Args InputValues `json:"args"`
 }
 
+func (t DirectiveDef) String() string {
+	return t.Name
+}
+
 type TypeKind string
 
 const (
@@ -112,6 +116,10 @@ type Type struct {
 	Interfaces    []*Type      `json:"interfaces"`
 	PossibleTypes []*Type      `json:"possibleTypes"`
 	Directives    Directives   `json:"directives"`
+}
+
+func (t *Type) String() string {
+	return t.Name
 }
 
 // Remove all occurrences of a type from the schema, including
@@ -183,6 +191,11 @@ type Field struct {
 	ParentObject *Type `json:"-"`
 }
 
+func (f *Field) String() string {
+	if f == nil { return "" }
+	return fmt.Sprintf("%s:%s", f.Name, f.TypeRef.String())
+}
+
 func (f *Field) ReferencesType(typeName string) bool {
 	// check return
 	if f.TypeRef.ReferencesType(typeName) {
@@ -201,6 +214,27 @@ type TypeRef struct {
 	Kind   TypeKind `json:"kind"`
 	Name   string   `json:"name,omitempty"`
 	OfType *TypeRef `json:"ofType,omitempty"`
+}
+
+func (r *TypeRef) String() string {
+	if r == nil {
+		return ""
+	}
+
+	switch r.Kind {
+	case TypeKindNonNull:
+		if r.OfType != nil {
+			return r.OfType.String() + "!"
+		}
+		return r.Name + "!"
+	case TypeKindList:
+		if r.OfType != nil {
+			return "[" + r.OfType.String() + "]"
+		}
+		return "[" + r.Name + "]"
+	default:
+		return r.Name
+	}
 }
 
 func (r TypeRef) IsOptional() bool {
@@ -297,6 +331,10 @@ type InputValue struct {
 	DeprecationReason *string    `json:"deprecationReason"`
 }
 
+func (v InputValue) String() string {
+	return fmt.Sprintf("%s:%s", v.Name, v.TypeRef.String())
+}
+
 func (v InputValue) IsOptional() bool {
 	return v.DefaultValue != nil || (v.TypeRef != nil && v.TypeRef.IsOptional())
 }
@@ -325,6 +363,10 @@ type EnumValue struct {
 	IsDeprecated      bool       `json:"isDeprecated"`
 	DeprecationReason *string    `json:"deprecationReason"`
 	Directives        Directives `json:"directives"`
+}
+
+func (v EnumValue) String() string {
+	return v.Name
 }
 
 type Directives []*Directive
@@ -398,6 +440,10 @@ type Directive struct {
 	Args []*DirectiveArg `json:"args"`
 }
 
+func (t Directive) String() string {
+	return t.Name
+}
+
 func (t Directive) Arg(name string) *string {
 	for _, i := range t.Args {
 		if i.Name == name {
@@ -410,6 +456,10 @@ func (t Directive) Arg(name string) *string {
 type DirectiveArg struct {
 	Name  string  `json:"name"`
 	Value *string `json:"value"`
+}
+
+func (t DirectiveArg) String() string {
+	return t.Name
 }
 
 func fromJSON[T any](raw *string) (t T) {
