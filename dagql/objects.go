@@ -695,6 +695,34 @@ type ViewFilter interface {
 	Contains(call.View) bool
 }
 
+type andView []ViewFilter
+
+func (views andView) Contains(view call.View) bool {
+	for _, filter := range views {
+		if !filter.Contains(view) {
+			return false
+		}
+	}
+	return true
+}
+
+func AndView(filters ...ViewFilter) ViewFilter {
+	nonNil := make([]ViewFilter, 0, len(filters))
+	for _, filter := range filters {
+		if filter != nil {
+			nonNil = append(nonNil, filter)
+		}
+	}
+	switch len(nonNil) {
+	case 0:
+		return nil
+	case 1:
+		return nonNil[0]
+	default:
+		return andView(nonNil)
+	}
+}
+
 // GlobalView is the default global view. Everyone can see it, and it behaves
 // identically everywhere.
 var GlobalView ViewFilter = nil
@@ -1291,7 +1319,13 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	class := server.InstallObject(NewClass[T](server)).(Class[T])
+	fields.InstallForView(server, nil)
+}
+
+// InstallForView installs the field's Object type for views matching view, and
+// installs all fields into the type.
+func (fields Fields[T]) InstallForView(server *Server, view ViewFilter) {
+	class := server.InstallObjectForView(NewClass[T](server), view).(Class[T])
 
 	var t T
 	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)

@@ -36,6 +36,7 @@ type Server struct {
 	root          AnyObjectResult
 	telemetry     AroundFunc
 	objects       map[string]ObjectType
+	objectFilters map[string]ViewFilter
 	interfaces    map[string]*Interface
 	scalars       map[string]ScalarType
 	scalarFilters map[string]ViewFilter
@@ -216,6 +217,7 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 func newBlankServer() *Server {
 	return &Server{
 		objects:       map[string]ObjectType{},
+		objectFilters: map[string]ViewFilter{},
 		interfaces:    map[string]*Interface{},
 		scalars:       map[string]ScalarType{},
 		scalarFilters: map[string]ViewFilter{},
@@ -251,6 +253,9 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	}
 	for name, filter := range s.scalarFilters {
 		out.scalarFilters[name] = filter
+	}
+	for name, filter := range s.objectFilters {
+		out.objectFilters[name] = filter
 	}
 	for name, typeDef := range s.typeDefs {
 		out.typeDefs[name] = typeDef
@@ -533,9 +538,21 @@ func (s *Server) Root() AnyObjectResult {
 // InstallObject installs the given Object type into the schema, or returns the
 // previously installed type if it was already present
 func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) ObjectType {
+	return s.InstallObjectForView(class, nil, directives...)
+}
+
+// InstallObjectForView installs the given Object type into the schema for views
+// matching filter, or returns the previously installed type if it was already
+// present.
+func (s *Server) InstallObjectForView(class ObjectType, filter ViewFilter, directives ...*ast.Directive) ObjectType {
 	s.installLock.Lock()
 
 	if class, ok := s.objects[class.TypeName()]; ok {
+		if filter != nil {
+			s.objectFilters[class.TypeName()] = filter
+			s.invalidateSchemaCache()
+			s.interfacesDirty = true
+		}
 		s.installLock.Unlock()
 		return class
 	}
@@ -543,6 +560,9 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
+	if filter != nil {
+		s.objectFilters[class.TypeName()] = filter
+	}
 	s.interfacesDirty = true
 	s.installLock.Unlock()
 
@@ -551,6 +571,12 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	}
 
 	return class
+}
+
+func (s *Server) ObjectViewFilter(typeName string) ViewFilter {
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
+	return s.objectFilters[typeName]
 }
 
 // markInterfacesDirty flags interface inference as stale, so it re-runs on the
@@ -932,6 +958,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
+			if filter, ok := s.objectFilters[t.TypeName()]; ok && !filter.Contains(view) {
+				return
+			}
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def

@@ -47,8 +47,9 @@ func (h *legacyIDHook) installLegacyID(typeName string, returnType dagql.Typed, 
 	if strings.HasPrefix(typeName, "_") {
 		return
 	}
+	viewFilter := dagql.AndView(legacyIDView, h.server.ObjectViewFilter(typeName))
 	idScalar := dagql.NewScalar(typeName+"ID", dagql.AnyID{})
-	h.server.InstallScalar(idScalar, legacyIDView)
+	h.server.InstallScalar(idScalar, viewFilter)
 	h.server.Root().ObjectType().Extend(dagql.FieldSpec{
 		Name:        fmt.Sprintf("load%sFromID", typeName),
 		Description: fmt.Sprintf("Load a %s from its ID.", typeName),
@@ -57,7 +58,7 @@ func (h *legacyIDHook) installLegacyID(typeName string, returnType dagql.Typed, 
 			Name: "id",
 			Type: idScalar,
 		}),
-		ViewFilter: legacyIDView,
+		ViewFilter: viewFilter,
 	}, func(ctx context.Context, _ dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
 		idable, ok := dagql.UnwrapAs[dagql.IDable](args["id"])
 		if !ok {

@@ -76,8 +76,11 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`The service will be started only for this pull.`),
 				dagql.Arg("protocol").Doc(
 					`Protocol to use for registry communication.`,
-					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`),
+					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
+					View(SinceVersion("v1.0.0-0")),
+				dagql.Arg("insecureSkipTLSVerify").
+					Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+					View(SinceVersion("v1.0.0-0")),
 			),
 		dagql.NodeFunc("build", s.build).
 			View(BeforeVersion("v0.19.0")).
@@ -717,8 +720,11 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`The service will be started only for this push.`),
 				dagql.Arg("protocol").Doc(
 					`Protocol to use for registry communication.`,
-					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`),
-				dagql.Arg("insecureSkipTLSVerify").Doc(`Allow HTTPS registry communication without verifying the server certificate.`),
+					`Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.`).
+					View(SinceVersion("v1.0.0-0")),
+				dagql.Arg("insecureSkipTLSVerify").
+					Doc(`Allow HTTPS registry communication without verifying the server certificate.`).
+					View(SinceVersion("v1.0.0-0")),
 			),
 
 		dagql.NodeFunc("platform", s.platform).

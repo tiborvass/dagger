@@ -1647,9 +1647,8 @@ func (e *EnumValues[T]) AliasView(val T, target T, view ViewFilter) T {
 	panic(fmt.Sprintf("cannot find enum %q", target))
 }
 
-func (e *EnumValues[T]) Install(srv *Server) {
-	var zero T
-	srv.scalars[zero.Type().Name()] = e
+func (e *EnumValues[T]) Install(srv *Server, filter ...ViewFilter) {
+	srv.InstallScalar(e, filter...)
 }
 
 type EnumValueName struct {
