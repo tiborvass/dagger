@@ -53,7 +53,9 @@ var (
 )
 
 func init() {
-	Version = iversion.Version
+	if Version == "" {
+		Version = iversion.Version
+	}
 
 	// hack: dynamically populate version env vars
 	// we use these during tests, but not really for anything else - this is
