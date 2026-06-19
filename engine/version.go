@@ -16,8 +16,8 @@ var (
 	// DAGGER_VERSION overrides at init for tests.
 	Version string
 
-	// Tag is the OCI image tag this engine binary was published under.
-	// It defaults to Version and can be overridden by build or test env.
+	// Tag is the default engine image tag. It defaults to Version for release
+	// builds and Commit for dev builds.
 	//
 	// DAGGER_TAG overrides at init for tests.
 	Tag string
