@@ -48,6 +48,11 @@ func New(
 	// passed here; this is for publish-time metadata only.
 	// +optional
 	version string,
+
+	// Git repository for VCS info injection.
+	// +optional
+	// +defaultPath="/"
+	repo *dagger.GitRepository,
 ) (*CliDev, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -67,6 +72,7 @@ func New(
 			Source: source,
 			Base:   base,
 			Values: values,
+			Repo:   repo,
 		}),
 	}, nil
 }

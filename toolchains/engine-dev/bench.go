@@ -174,7 +174,7 @@ func (dev *EngineDev) benchDump(
 	opts *benchOpts,
 	dOpts *dumpOpts,
 ) (*dagger.Directory, error) {
-	ctr, debugEndpoint, err := dev.testContainer(ctx, nil)
+	ctr, debugEndpoint, ldflagValues, err := dev.testContainer(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +190,7 @@ func (dev *EngineDev) benchDump(
 		update:        false,
 		testVerbose:   opts.testVerbose,
 		bench:         true,
+		ldflagValues:  ldflagValues,
 	})
 	return dev.pprofDump(ctx, ctr, debugEndpoint, dOpts)
 }
@@ -204,6 +205,7 @@ type benchOpts struct {
 	count         int
 	testVerbose   bool
 	prewarm       bool
+	ldflagValues  []string
 }
 
 func (dev *EngineDev) bench(
@@ -223,14 +225,16 @@ func (dev *EngineDev) bench(
 			update:        false,
 			testVerbose:   opts.testVerbose,
 			bench:         true,
+			ldflagValues:  opts.ldflagValues,
 		},
 		)
 	}
 
-	ctr, _, err := dev.testContainer(ctx, nil)
+	ctr, _, ldflagValues, err := dev.testContainer(ctx, nil)
 	if err != nil {
 		return err
 	}
+	opts.ldflagValues = ldflagValues
 
 	if opts.prewarm {
 		_, err = run(ctr.WithEnvVariable("DAGGER_BENCH_PREWARM", "true")).Sync(ctx)

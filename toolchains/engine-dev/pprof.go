@@ -70,7 +70,7 @@ func (dev *EngineDev) TestDump(
 	if err != nil {
 		return nil, err
 	}
-	ctr, debugEndpoint, err := dev.testContainer(ctx, nil)
+	ctr, debugEndpoint, ldflagValues, err := dev.testContainer(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +86,7 @@ func (dev *EngineDev) TestDump(
 		update:        false,
 		testVerbose:   testVerbose,
 		bench:         false,
+		ldflagValues:  ldflagValues,
 	})
 	return dev.pprofDump(ctx, ctr, debugEndpoint, &dumpOpts{
 		route:    route,
