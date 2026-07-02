@@ -77,6 +77,9 @@ func (src *ModuleSource) resolveGitPointer(
 	if err != nil {
 		return dir, notAGitRepo("load .git pointer target %q: %s", hostGitDir, err)
 	}
+	if err := src.validateGitPointerTarget(ctx, dag, gitDir, hostGitDir); err != nil {
+		return dir, err
+	}
 
 	// A worktree's git dir holds only per-worktree state (HEAD, index, ...)
 	// plus a "commondir" pointer to the shared git dir; everything else
@@ -230,6 +233,99 @@ func readDirFile(
 		return nil, err
 	}
 	return f.Self().Contents(ctx, f, nil, nil)
+}
+
+func (src *ModuleSource) validateGitPointerTarget(
+	ctx context.Context,
+	dag *dagql.Server,
+	gitDir dagql.ObjectResult[*Directory],
+	hostGitDir string,
+) error {
+	contextDir := cleanHostPath(src.Local.ContextDirectoryPath)
+	contextGitFile := cleanHostPath(filepath.Join(contextDir, ".git"))
+
+	// Linked worktree git dirs carry a gitdir file pointing back to the
+	// worktree's .git pointer file.
+	switch _, err := gitDir.Self().Stat(ctx, gitDir, dag, "gitdir", false); {
+	case err == nil:
+		backref, err := readDirFile(ctx, dag, gitDir, "gitdir")
+		if err != nil {
+			return fmt.Errorf("read gitdir back-reference: %w", err)
+		}
+		backrefPath := resolveHostGitPath(hostGitDir, string(backref))
+		if !sameHostPath(backrefPath, contextGitFile) {
+			return notAGitRepo(".git pointer target %q points back to %q, not context gitfile %q",
+				hostGitDir, backrefPath, contextGitFile)
+		}
+		return nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+
+	// Submodule git dirs carry their back-reference as core.worktree in config.
+	cfg, err := readDirFile(ctx, dag, gitDir, "config")
+	if err != nil {
+		return notAGitRepo(".git pointer target %q has no config back-reference to context %q: %s",
+			hostGitDir, contextDir, err)
+	}
+	worktree, ok := gitConfigValue(cfg, "core", "worktree")
+	if !ok {
+		return notAGitRepo(".git pointer target %q does not point back to context %q",
+			hostGitDir, contextDir)
+	}
+	worktreePath := resolveHostGitPath(hostGitDir, worktree)
+	if !sameHostPath(worktreePath, contextDir) {
+		return notAGitRepo(".git pointer target %q points back to %q, not context %q",
+			hostGitDir, worktreePath, contextDir)
+	}
+	return nil
+}
+
+func resolveHostGitPath(base, p string) string {
+	p = strings.TrimSpace(p)
+	if filepath.IsAbs(p) {
+		return cleanHostPath(p)
+	}
+	return cleanHostPath(filepath.Join(base, p))
+}
+
+func sameHostPath(a, b string) bool {
+	return cleanHostPath(a) == cleanHostPath(b)
+}
+
+func cleanHostPath(p string) string {
+	return filepath.Clean(strings.TrimSpace(p))
+}
+
+func gitConfigValue(cfg []byte, section, key string) (string, bool) {
+	var (
+		inSection bool
+		value     string
+		found     bool
+	)
+	section = strings.ToLower(section)
+	key = strings.ToLower(key)
+	for line := range strings.Lines(string(cfg)) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.Contains(line, "]") {
+			name := strings.TrimSpace(line[1:strings.Index(line, "]")])
+			inSection = strings.EqualFold(name, section)
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(k), key) {
+			continue
+		}
+		value = strings.TrimSpace(v)
+		found = true
+	}
+	return value, found
 }
 
 func notAGitRepo(format string, args ...any) error {

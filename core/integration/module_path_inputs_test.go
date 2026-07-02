@@ -1270,9 +1270,10 @@ func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T)
 	// A context with no git checkout at all degrades contextual git args to
 	// null: absence is a legitimate environment (`dagger init` before `git
 	// init`, exported source trees). A .git that exists but is unusable — a
-	// dead submodule/worktree pointer — is a broken environment and fails
-	// loudly instead of silently stripping git info. (Resolvable pointer
-	// files are covered by TestContextGitSubmodule/TestContextGitWorktree.)
+	// dead submodule/worktree pointer, or a pointer to an unrelated repo — is
+	// a broken environment and fails loudly instead of silently stripping git
+	// info. (Resolvable pointer files are covered by TestContextGitSubmodule/
+	// TestContextGitWorktree.)
 
 	// A module in a plain directory: no git checkout anywhere.
 	noGit := func(c *dagger.Client) *dagger.Container {
@@ -1286,6 +1287,21 @@ func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T)
 	brokenGit := func(c *dagger.Client) *dagger.Container {
 		return moduleFixture(t, c, "go/path-context-git-optional").
 			WithExec([]string{"sh", "-c", "rm -rf .git && echo 'gitdir: ../../.git/modules/work' > .git"})
+	}
+	// A .git pointer that targets a real git dir, but one unrelated to this
+	// checkout. Validity as a git dir is not enough; the target must prove it
+	// belongs to this context.
+	unrelatedGit := func(c *dagger.Client) *dagger.Container {
+		return moduleFixture(t, c, "go/path-context-git-optional").
+			WithExec([]string{"sh", "-c", `
+mkdir /unrelated &&
+git -C /unrelated init &&
+echo unrelated > /unrelated/unrelated.txt &&
+git -C /unrelated add unrelated.txt &&
+git -C /unrelated commit -m "unrelated repo" &&
+rm -rf .git &&
+printf 'gitdir: /unrelated/.git\n' > .git
+`})
 	}
 
 	t.Run("no git: optional repo resolves to null", func(ctx context.Context, t *testctx.T) {
@@ -1321,6 +1337,16 @@ func (ModuleSuite) TestContextGitUnusableRepo(ctx context.Context, t *testctx.T)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		require.Contains(t, logs.String(), ".git pointer target")
+	})
+
+	t.Run("unrelated git pointer fails loudly", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		_, err := unrelatedGit(c).With(daggerCall("optional-repo")).Sync(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		require.Contains(t, logs.String(), ".git pointer target")
+		require.Contains(t, logs.String(), "does not point back to context")
 	})
 
 	t.Run("optional repo resolves in a real repo", func(ctx context.Context, t *testctx.T) {
