@@ -1331,6 +1331,68 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 	return filtered
 }
 
+// filterPendingWorkspaceModulesForScopedRootFields applies the client-declared
+// workspace module scope on top of the root-field demand: when the request's
+// only full-schema demand is currentTypeDefs, the scope replaces its
+// load-everything contribution with the scoped module set. Any other
+// full-schema field keeps loading everything, scope untouched. The second
+// result reports whether the scope was applied, so the caller can consume it.
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string) ([]pendingModule, bool) {
+	if scope == "" || len(mods) == 0 {
+		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+	}
+
+	hasCurrentTypeDefs := false
+	remaining := make([]string, 0, len(rootFields))
+	for _, field := range rootFields {
+		if field == "currentTypeDefs" {
+			hasCurrentTypeDefs = true
+			continue
+		}
+		remaining = append(remaining, field)
+	}
+	if !hasCurrentTypeDefs || rootFieldsRequireFullWorkspaceSchema(remaining) {
+		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
+	}
+
+	wanted := make(map[string]struct{})
+	for _, mod := range filterPendingWorkspaceModulesForRootFields(mods, served, remaining) {
+		wanted[moduleProgressName(mod)] = struct{}{}
+	}
+	for _, mod := range resolveWorkspaceModuleScope(mods, served, scope) {
+		wanted[moduleProgressName(mod)] = struct{}{}
+	}
+	selected := make([]pendingModule, 0, len(wanted))
+	for _, mod := range mods {
+		if _, ok := wanted[moduleProgressName(mod)]; ok {
+			selected = append(selected, mod)
+		}
+	}
+	return selected, true
+}
+
+// resolveWorkspaceModuleScope maps the scope token to the pending modules it
+// demands: the named module plus the pending entrypoint module(s) -- the token
+// may be one of their root-proxied functions, and the command tree wants their
+// Query-root proxies either way. A token naming nothing known demands the
+// entrypoint alone when one is pending; with no entrypoint to resolve it,
+// everything loads (conservative: the token could be anything).
+func resolveWorkspaceModuleScope(mods []pendingModule, served map[string]struct{}, scope string) []pendingModule {
+	scopeName := canonicalWorkspaceModuleName(scope)
+	_, isModule := knownWorkspaceModuleNames(mods, served)[scopeName]
+
+	selected := make([]pendingModule, 0, len(mods))
+	for _, mod := range mods {
+		if mod.Entrypoint || (isModule && pendingModuleCliName(mod) == scopeName) {
+			selected = append(selected, mod)
+		}
+	}
+	if !isModule && len(selected) == 0 {
+		return mods
+	}
+	return selected
+}
+
 func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {
 	for _, field := range fields {
 		switch field {

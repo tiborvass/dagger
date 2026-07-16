@@ -510,6 +510,91 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	})
 }
 
+func TestFilterPendingWorkspaceModulesForScopedRootFields(t *testing.T) {
+	t.Parallel()
+
+	foo := pendingModule{Kind: moduleLoadKindAmbient, Name: "foo"}
+	barBaz := pendingModule{Kind: moduleLoadKindAmbient, Name: "barBaz"}
+	entry := pendingModule{Kind: moduleLoadKindAmbient, Name: "entry", Entrypoint: true}
+	mods := []pendingModule{foo, barBaz, entry}
+
+	t.Run("no scope delegates to root-field demand", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "")
+		require.False(t, applied)
+		require.Equal(t, mods, selected)
+	})
+
+	t.Run("scoped typedefs loads target plus entrypoint", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "foo")
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{foo, entry}, selected)
+	})
+
+	t.Run("kebab-case token matches declared module name", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "bar-baz")
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{barBaz, entry}, selected)
+	})
+
+	t.Run("unknown token loads pending entrypoint alone", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs"}, "greet")
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{entry}, selected)
+	})
+
+	t.Run("unknown token without entrypoint loads all", func(t *testing.T) {
+		t.Parallel()
+
+		noEntry := []pendingModule{foo, barBaz}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(noEntry, nil, []string{"currentTypeDefs"}, "greet")
+		require.True(t, applied)
+		require.Equal(t, noEntry, selected)
+	})
+
+	t.Run("another full-schema field loads all without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		for _, field := range []string{"env", "__schema", "currentModule"} {
+			selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", field}, "foo")
+			require.False(t, applied, field)
+			require.Equal(t, mods, selected, field)
+		}
+	})
+
+	t.Run("no typedefs field delegates without consuming", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"foo"}, "barBaz")
+		require.False(t, applied)
+		require.Equal(t, []pendingModule{foo}, selected)
+	})
+
+	t.Run("typedefs plus module field unions both demands", func(t *testing.T) {
+		t.Parallel()
+
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, nil, []string{"currentTypeDefs", "foo"}, "bar-baz")
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{foo, barBaz, entry}, selected)
+	})
+
+	t.Run("served target contributes nothing to load", func(t *testing.T) {
+		t.Parallel()
+
+		served := map[string]struct{}{"my-mod": {}}
+		selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, served, []string{"currentTypeDefs"}, "myMod")
+		require.True(t, applied)
+		require.Equal(t, []pendingModule{entry}, selected)
+	})
+}
+
 func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
 	t.Parallel()
 
