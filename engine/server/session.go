@@ -274,8 +274,12 @@ type daggerClient struct {
 	// served workspace module names, so demand filters recognize them without
 	// reloading
 	servedWorkspaceModuleNames map[string]struct{}
-	singleQueryMu              sync.Mutex
-	singleQueryServed          bool
+	// whether the client-declared workspace module scope was applied; the
+	// scope is one-shot so later introspections load everything (guarded by
+	// modulesMu)
+	workspaceModuleScopeConsumed bool
+	singleQueryMu                sync.Mutex
+	singleQueryServed            bool
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -1814,16 +1818,47 @@ func (client *daggerClient) claimSingleQueryRequest() error {
 // full-schema or unrecognized fields demand everything. The rest stay pending.
 func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *daggerClient, r *http.Request) error {
 	var filter func([]pendingModule) []pendingModule
+	scopeApplied := false
 	if client.hasPendingWorkspaceModules() {
 		if ok, rootFields, err := dagql.PeekRootFields(r); err == nil && ok {
 			filter = func(mods []pendingModule) []pendingModule {
-				// runs under client.modulesMu, which also guards servedWorkspaceModuleNames
-				return filterPendingWorkspaceModulesForRootFields(mods, client.servedWorkspaceModuleNames, rootFields)
+				// runs under client.modulesMu, which also guards
+				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
+				scope := client.pendingWorkspaceModuleScopeLocked()
+				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, rootFields, scope)
+				if applied {
+					scopeApplied = true
+					names := make([]string, 0, len(selected))
+					for _, mod := range selected {
+						names = append(names, moduleProgressName(mod))
+					}
+					slog.Debug("narrowing workspace module load to client scope",
+						"scope", scope,
+						"modules", names)
+				}
+				return selected
 			}
 		}
 	}
 	_, err := srv.ensureModulesLoadedMode(ctx, client, filter, false)
+	if err == nil && scopeApplied {
+		// Consume the scope only after a successful load so a transient failure
+		// leaves it retryable; a failed demanded module also stays
+		// pending/reported by the merged loading machinery.
+		client.modulesMu.Lock()
+		client.workspaceModuleScopeConsumed = true
+		client.modulesMu.Unlock()
+	}
 	return err
+}
+
+// pendingWorkspaceModuleScopeLocked returns the client-declared workspace
+// module scope while it is still consumable. client.modulesMu must be held.
+func (client *daggerClient) pendingWorkspaceModuleScopeLocked() string {
+	if client.workspaceModuleScopeConsumed || client.clientMetadata == nil {
+		return ""
+	}
+	return client.clientMetadata.WorkspaceModuleScope
 }
 
 func (client *daggerClient) hasPendingWorkspaceModules() bool {
