@@ -1435,6 +1435,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			LockMode:              string(workspace.LockModeFrozen),
 			Workspace:             stringPtr("github.com/dagger/base@main"),
 			WorkspaceEnv:          stringPtr("parent-ci"),
+			WorkspaceModuleScope:  "parent-scope",
 			UseRecipeIDsByDefault: true,
 		}
 	}
@@ -1460,6 +1461,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.False(t, md.EagerRuntime)
 		require.Nil(t, md.Workspace)
 		require.Nil(t, md.WorkspaceEnv)
+		require.Empty(t, md.WorkspaceModuleScope)
 		require.True(t, md.UseRecipeIDsByDefault)
 
 		base.AllowedLLMModules[0] = "mutated"
@@ -1493,6 +1495,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			LockMode:                       string(workspace.LockModeLive),
 			Workspace:                      &workspaceRef,
 			WorkspaceEnv:                   &workspaceEnv,
+			WorkspaceModuleScope:           "good-mod",
 		}
 
 		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
@@ -1513,6 +1516,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.True(t, md.SuppressCompatWorkspaceWarning)
 		require.Equal(t, "github.com/dagger/dagger@main", *md.Workspace)
 		require.Equal(t, "ci", *md.WorkspaceEnv)
+		require.Equal(t, "good-mod", md.WorkspaceModuleScope)
 		require.Equal(t, []engine.ExtraModule{{
 			Ref:        "github.com/dagger/mod",
 			Entrypoint: true,
