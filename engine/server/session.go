@@ -1847,17 +1847,15 @@ func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, c
 			}
 		}
 	}
-	_, err := srv.ensureModulesLoadedMode(ctx, client, filter, false)
+	_, err := srv.ensureModulesLoadedModeWithSuccess(ctx, client, filter, false, func() {
+		// Consume only after a successful load, but before modulesMu is
+		// released, so another request cannot claim the one-shot scope.
+		if scopeApplied {
+			client.workspaceModuleScopeConsumed = true
+		}
+	})
 	if postLoad != nil {
 		postLoad()
-	}
-	if err == nil && scopeApplied {
-		// Consume the scope only after a successful load so a transient failure
-		// leaves it retryable; a failed demanded module also stays
-		// pending/reported by the merged loading machinery.
-		client.modulesMu.Lock()
-		client.workspaceModuleScopeConsumed = true
-		client.modulesMu.Unlock()
 	}
 	return err
 }
