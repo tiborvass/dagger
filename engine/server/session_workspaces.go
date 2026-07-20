@@ -1337,7 +1337,7 @@ func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, served map
 // load-everything contribution with the scoped module set. Any other
 // full-schema field keeps loading everything, scope untouched. The second
 // result reports whether the scope was applied, so the caller can consume it.
-func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string) ([]pendingModule, bool) {
+func filterPendingWorkspaceModulesForScopedRootFields(mods []pendingModule, served map[string]struct{}, rootFields []string, scope string, entrypointServed bool) ([]pendingModule, bool) {
 	if scope == "" || len(mods) == 0 {
 		return filterPendingWorkspaceModulesForRootFields(mods, served, rootFields), false
 	}

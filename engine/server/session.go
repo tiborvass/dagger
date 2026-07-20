@@ -1817,6 +1817,13 @@ func (client *daggerClient) claimSingleQueryRequest() error {
 // the request's root fields: fields naming pending modules demand those, and
 // full-schema or unrecognized fields demand everything. The rest stay pending.
 func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *daggerClient, r *http.Request) error {
+	return srv.ensureRequestModulesLoadedWithPostLoad(ctx, client, r, nil)
+}
+
+// ensureRequestModulesLoadedWithPostLoad is split out so synchronization-
+// sensitive tests can observe the client immediately after module loading
+// returns, before any subsequent request finalization.
+func (srv *Server) ensureRequestModulesLoadedWithPostLoad(ctx context.Context, client *daggerClient, r *http.Request, postLoad func()) error {
 	var filter func([]pendingModule) []pendingModule
 	scopeApplied := false
 	if client.hasPendingWorkspaceModules() {
@@ -1825,7 +1832,7 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *dagge
 				// runs under client.modulesMu, which also guards
 				// servedWorkspaceModuleNames and workspaceModuleScopeConsumed
 				scope := client.pendingWorkspaceModuleScopeLocked()
-				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, rootFields, scope)
+				selected, applied := filterPendingWorkspaceModulesForScopedRootFields(mods, client.servedWorkspaceModuleNames, rootFields, scope, client.entrypointServed)
 				if applied {
 					scopeApplied = true
 					names := make([]string, 0, len(selected))
@@ -1841,6 +1848,9 @@ func (srv *Server) ensureRequestModulesLoaded(ctx context.Context, client *dagge
 		}
 	}
 	_, err := srv.ensureModulesLoadedMode(ctx, client, filter, false)
+	if postLoad != nil {
+		postLoad()
+	}
 	if err == nil && scopeApplied {
 		// Consume the scope only after a successful load so a transient failure
 		// leaves it retryable; a failed demanded module also stays
