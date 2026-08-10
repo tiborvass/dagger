@@ -628,7 +628,7 @@ func equalLockInputs(actual, expected []any) bool {
 
 const gitLatestCommitQuery = `{
   git(url: "` + lockTestGitRepoURL + `") {
-    latest {
+    latestVersion {
       ref
       commit
     }
@@ -672,7 +672,7 @@ func (LockfileSuite) TestGitLatestFrozenDoesNotLoadRemoteMetadata(ctx context.Co
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
   git(url: "`+unavailableRemote+`") {
-    latest {
+    latestVersion {
       ref
       commit
     }
@@ -702,7 +702,7 @@ func (LockfileSuite) TestGitLatestFrozenDoesNotLoadRemoteMetadata(ctx context.Co
 }
 
 // Unlike git://, an https:// URL without explicit auth makes the parent git
-// resolver probe the remote for visibility before latest can use the frozen
+// resolver probe the remote for visibility before latestVersion can use the frozen
 // pin. That probe must not fail the query when the remote is unreachable.
 func (LockfileSuite) TestGitLatestFrozenHTTPSUnavailableRemoteUsesPin(ctx context.Context, t *testctx.T) {
 	const unavailableRemote = "https://git.example.invalid/dagger.git"
@@ -713,7 +713,7 @@ func (LockfileSuite) TestGitLatestFrozenHTTPSUnavailableRemoteUsesPin(ctx contex
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
   git(url: "`+unavailableRemote+`") {
-    latest {
+    latestVersion {
       ref
       commit
     }
@@ -748,7 +748,7 @@ func (LockfileSuite) TestGitLatestFrozenRejectsInvalidRef(ctx context.Context, t
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
   git(url: "git://example.invalid/dagger.git") {
-    latest { commit }
+    latestVersion { commit }
   }
 }`)
 	writeGitLatestLockForRemote(
