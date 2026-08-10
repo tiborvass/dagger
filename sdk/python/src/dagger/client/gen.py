@@ -1990,6 +1990,7 @@ class Container(Type):
         registry_service: "Service | None" = None,
         protocol: RegistryProtocol | None = None,
         insecure_skip_tls_verify: bool | None = False,
+        latest_include_subreleases: bool | None = False,
     ) -> Self:
         """Download a container image, and apply it to the container state. All
         previous state will be lost.
@@ -2000,10 +2001,11 @@ class Container(Type):
             Address of the container image to download, in standard OCI ref
             format. Example: "registry.dagger.io/engine:latest".
             Starting with API v1.0.0-beta.10, an address without a tag or
-            digest selects the greatest stable semantic-version tag, falling
-            back to the literal "latest" tag when no eligible release exists.
-            Specify ":latest" explicitly to request the registry's literal
-            "latest" tag.
+            digest selects the greatest stable release tag, falling back to
+            the literal "latest" tag when no eligible release exists. Release
+            selection accepts an optional "v" prefix, incomplete versions, and
+            zero-padded numeric components. Specify ":latest" explicitly to
+            request the registry's literal "latest" tag.
         registry_service:
             Service to use as the registry endpoint for the image address.
             The service will be started only for this pull.
@@ -2013,12 +2015,15 @@ class Container(Type):
         insecure_skip_tls_verify:
             Allow HTTPS registry communication without verifying the server
             certificate.
+        latest_include_subreleases:
+            Include prerelease tags when selecting the latest release.
         """
         _args = [
             Arg("address", address),
             Arg("registryService", registry_service, None),
             Arg("protocol", protocol, None),
             Arg("insecureSkipTLSVerify", insecure_skip_tls_verify, False),
+            Arg("latestIncludeSubreleases", latest_include_subreleases, False),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -8791,14 +8796,26 @@ class GitRepository(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    def latest_version(self) -> GitRef:
-        """Return the latest release tag. If no release tag exists, fall back to
-        the remote HEAD branch.
+    def latest(
+        self,
+        *,
+        include_subreleases: bool | None = False,
+    ) -> GitRef:
+        """Return the latest release tag, falling back to HEAD when no release
+        exists.
 
-        This operation is pinned.
+        Release selection accepts an optional "v" prefix, incomplete versions,
+        and zero-padded numeric components. This operation is pinned.
+
+        Parameters
+        ----------
+        include_subreleases:
+            Include prerelease tags when selecting the latest release.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("latestVersion", _args)
+        _args = [
+            Arg("includeSubreleases", include_subreleases, False),
+        ]
+        _ctx = self._select("latest", _args)
         return GitRef(_ctx)
 
     def ref(self, name: str) -> GitRef:

@@ -406,6 +406,11 @@ export type ContainerFromOpts = {
    * Allow HTTPS registry communication without verifying the server certificate.
    */
   insecureSkipTLSVerify?: boolean
+
+  /**
+   * Include prerelease tags when selecting the latest release.
+   */
+  latestIncludeSubreleases?: boolean
 }
 
 export type ContainerImportOpts = {
@@ -1846,6 +1851,13 @@ export type GitRepositoryBranchesOpts = {
    * Glob patterns (e.g., "refs/tags/v*").
    */
   patterns?: string[]
+}
+
+export type GitRepositoryLatestOpts = {
+  /**
+   * Include prerelease tags when selecting the latest release.
+   */
+  includeSubreleases?: boolean
 }
 
 export type GitRepositoryTagsOpts = {
@@ -4670,7 +4682,7 @@ export class Container extends BaseClient {
    * Download a container image, and apply it to the container state. All previous state will be lost.
    * @param address Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
    *
-   * Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable semantic-version tag, falling back to the literal "latest" tag when no eligible release exists. Specify ":latest" explicitly to request the registry's literal "latest" tag.
+   * Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists. Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. Specify ":latest" explicitly to request the registry's literal "latest" tag.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
@@ -4678,6 +4690,7 @@ export class Container extends BaseClient {
    *
    * Defaults to "HTTPS". Use "HTTP" only for plain HTTP registries.
    * @param opts.insecureSkipTLSVerify Allow HTTPS registry communication without verifying the server certificate.
+   * @param opts.latestIncludeSubreleases Include prerelease tags when selecting the latest release.
    */
   from = (address: string, opts?: ContainerFromOpts): Container => {
     const metadata = {
@@ -9791,12 +9804,13 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.
+   * Return the latest release tag, falling back to HEAD when no release exists.
    *
-   * This operation is pinned.
+   * Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.
+   * @param opts.includeSubreleases Include prerelease tags when selecting the latest release.
    */
-  latestVersion = (): GitRef => {
-    const ctx = this._ctx.select("latestVersion")
+  latest = (opts?: GitRepositoryLatestOpts): GitRef => {
+    const ctx = this._ctx.select("latest", { ...opts })
     return new GitRef(ctx)
   }
 
