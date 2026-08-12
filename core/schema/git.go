@@ -114,7 +114,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Returns details for the latest semver tag.`),
 		dagql.NodeFunc("latestVersion", s.latestVersion).
 			View(AfterVersion("v1.0.0-beta.10")).
-			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`, `This operation is pinned.`),
+			Doc(`Return the latest release tag. If no release tag exists, fall back to the remote HEAD branch.`, `This operation is pinned.`).
+			Args(
+				dagql.Arg("includeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`),
+			),
 
 		dagql.Func("tags", s.tags).
 			Doc(`tags that match any of the given glob patterns.`).
@@ -2080,7 +2083,15 @@ func (s *gitSchema) log(
 	return commits, nil
 }
 
-func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], _ struct{}) (inst dagql.Result[*core.GitRef], _ error) {
+type latestVersionArgs struct {
+	IncludeSubreleases bool `name:"includeSubreleases" default:"false"`
+}
+
+func (s *gitSchema) latestVersion(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitRepository],
+	args latestVersionArgs,
+) (inst dagql.Result[*core.GitRef], _ error) {
 	repo := parent.Self()
 	remoteRepo, isRemote := repo.Backend.(*core.RemoteGitRepository)
 	if !isRemote {
@@ -2088,7 +2099,7 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 		if err != nil {
 			return inst, err
 		}
-		ref, err := core.SelectLatestGitRef(remote)
+		ref, err := core.SelectLatestGitRef(remote, args.IncludeSubreleases)
 		if err != nil {
 			return inst, err
 		}
@@ -2096,7 +2107,7 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 	}
 
 	const lockPolicy = workspace.PolicyPin
-	lockInputs := []any{remoteRepo.URL.Remote()}
+	lockInputs := []any{remoteRepo.URL.Remote(), args.IncludeSubreleases}
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -2120,7 +2131,10 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 			return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
 		}
 		if lockResolution.Pin != "" {
-			ref, err := core.DecodeGitLatestRefPin(lockResolution.Pin)
+			ref, err := core.DecodeGitLatestRefPin(
+				lockResolution.Pin,
+				args.IncludeSubreleases,
+			)
 			if err != nil {
 				return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
 			}
@@ -2132,7 +2146,7 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 	if err != nil {
 		return inst, err
 	}
-	ref, err := core.SelectLatestGitRef(remote)
+	ref, err := core.SelectLatestGitRef(remote, args.IncludeSubreleases)
 	if err != nil {
 		return inst, err
 	}
