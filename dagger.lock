@@ -1,4 +1,4 @@
 [["version","1"]]
-["","git.head",["https://github.com/dagger/dang-sdk"],"c724eec4270870aae489daa9f3cb8cbacfb44680","float"]
-["","git.head",["https://github.com/dagger/go-sdk"],"af56d1672305bcb826b16ca9bebf3c91ef9593c6","float"]
-["","git.head",["https://github.com/vito/editor"],"1e1ded886d1252071f8b50ada6a4580af8c53866","float"]
+["","git.latest",["https://github.com/dagger/dang-sdk",false],"refs/heads/main@c724eec4270870aae489daa9f3cb8cbacfb44680","pin"]
+["","git.latest",["https://github.com/dagger/go-sdk",false],"refs/heads/main@9b6c556101f8fdace897aa3ed1ff9e3efb344e34","pin"]
+["","git.latest",["https://github.com/vito/editor",false],"refs/heads/main@1e1ded886d1252071f8b50ada6a4580af8c53866","pin"]
