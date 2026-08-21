@@ -78,7 +78,7 @@ func (LockfileSuite) TestDefaultUsesPinEntry(ctx context.Context, t *testctx.T) 
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 
-	_, _ = writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
+	_, _ = writeContainerFromLock(t, workdir, "not-a-digest", workspace.PolicyPin)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.Error(t, err)
@@ -97,7 +97,7 @@ func (LockfileSuite) TestDefaultMigratesV1FloatEntry(ctx context.Context, t *tes
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyFloat)
+	lockPath, originalLock := writeContainerFromLock(t, workdir, "not-a-digest", workspace.PolicyFloat)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func (LockfileSuite) TestDefaultMigratesV1FloatEntry(ctx context.Context, t *tes
 
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	lockContents := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
+	lockContents := mustMarshalContainerFromLock(t, "not-a-digest", workspace.PolicyPin)
 	remote := newRemoteLockWorkspace(ctx, t, c, lockContents)
 	workdir := t.TempDir()
 	queryPath := writeContainerFromQuery(t, workdir)
@@ -160,7 +160,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingEntry(ctx context.Context, t *te
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("0", 64), workspace.PolicyPin)
+	lockPath, originalLock := writeContainerFromLock(t, workdir, "sha256:"+strings.Repeat("0", 64), workspace.PolicyPin)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
@@ -328,12 +328,12 @@ func writeQueryDoc(t *testctx.T, workdir, name, contents string) string {
 	return queryPath
 }
 
-func writeContainerFromLock(t *testctx.T, workdir, platform, digest string, policy workspace.LockPolicy) (string, string) {
+func writeContainerFromLock(t *testctx.T, workdir, digest string, policy workspace.LockPolicy) (string, string) {
 	t.Helper()
 
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 
-	lockContents := mustMarshalContainerFromLock(t, platform, digest, policy)
+	lockContents := mustMarshalContainerFromLock(t, digest, policy)
 	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
 
 	// a valid workspace must contain a dagger.toml file
@@ -362,14 +362,14 @@ func writeGitRefLock(t *testctx.T, workdir, operation, name, commit string, poli
 	return lockPath, lockContents
 }
 
-func mustMarshalContainerFromLock(t *testctx.T, platform, digest string, policy workspace.LockPolicy) string {
+func mustMarshalContainerFromLock(t *testctx.T, digest string, policy workspace.LockPolicy) string {
 	t.Helper()
 	if policy == workspace.PolicyFloat {
-		return mustMarshalLegacyV1Lock(t, "container.from", []any{"docker.io/library/alpine:latest", platform}, digest, policy)
+		return mustMarshalLegacyV1Lock(t, "container.from", []any{"docker.io/library/alpine:latest"}, digest, policy)
 	}
 
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest", platform}, workspace.LookupResult{
+	require.NoError(t, lock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest"}, workspace.LookupResult{
 		Value:  digest,
 		Policy: policy,
 	}))
@@ -429,15 +429,6 @@ func mustMarshalLegacyV1Lock(t *testctx.T, operation string, inputs []any, value
 	return `[["version","1"]]` + "\n" + string(entry)
 }
 
-func lockTestPlatform(ctx context.Context, t *testctx.T) string {
-	t.Helper()
-
-	c := connect(ctx, t)
-	platform, err := c.DefaultPlatform(ctx)
-	require.NoError(t, err)
-	return string(platform)
-}
-
 func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
 	t.Helper()
 	require.True(t, strings.HasPrefix(string(lockBytes), `[["version","2"]]`), "lockfile: %q", string(lockBytes))
@@ -450,7 +441,7 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
 			continue
 		}
 		found = true
-		require.Len(t, entry.Inputs, 2)
+		require.Len(t, entry.Inputs, 1)
 
 		ref, ok := entry.Inputs[0].(string)
 		require.True(t, ok)
@@ -798,7 +789,7 @@ func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t
 	require.Equal(t, lockBytes, pinnedLockBytes)
 
 	stalePin := "docker.io/library/alpine:1.0.0@sha256:" + strings.Repeat("0", 64)
-	writeContainerFromLatestLock(t, workdir, lockTestPlatform(ctx, t), stalePin)
+	writeContainerFromLatestLock(t, workdir, stalePin)
 
 	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
@@ -809,39 +800,14 @@ func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t
 	require.NotEqual(t, stalePin, updatedPin)
 }
 
-// Engines that predate latest-release selection recorded a bare address like
-// "alpine" as a container.from entry pinned at the implicit :latest tag.
-// Such workspaces must keep resolving through that entry after an upgrade.
-func (LockfileSuite) TestContainerFromLatestFallsBackToLegacyFromEntry(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	imageRef, err := c.Container().From("alpine:latest").ImageRef(ctx)
-	require.NoError(t, err)
-	_, imageDigest, found := strings.Cut(imageRef, "@")
-	require.True(t, found, "expected canonical image ref with digest: %q", imageRef)
-	require.True(t, strings.HasPrefix(imageDigest, "sha256:"), imageDigest)
-
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	queryPath := writeQueryDoc(t, workdir, "latest-image-ref.graphql", containerFromLatestImageRefQuery)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), imageDigest, workspace.PolicyPin)
-
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-	require.NoError(t, err)
-	require.Contains(t, string(out), "alpine:latest@"+imageDigest)
-
-	lockBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.Equal(t, originalLock, string(lockBytes))
-}
-
-func writeContainerFromLatestLock(t *testctx.T, workdir, platform, pin string) {
+func writeContainerFromLatestLock(t *testctx.T, workdir, pin string) {
 	t.Helper()
 
 	lock := workspace.NewLock()
 	require.NoError(t, lock.SetLookup(
 		"",
 		"container.from",
-		[]any{"docker.io/library/alpine", platform, false},
+		[]any{"docker.io/library/alpine", false},
 		workspace.LookupResult{
 			Value:  pin,
 			Policy: workspace.PolicyPin,
@@ -866,9 +832,9 @@ func assertContainerFromLatestLockEntry(t *testctx.T, lockBytes []byte) string {
 		if entry.Namespace != "" || entry.Operation != "container.from" {
 			continue
 		}
-		require.Len(t, entry.Inputs, 3)
+		require.Len(t, entry.Inputs, 2)
 		require.Equal(t, "docker.io/library/alpine", entry.Inputs[0])
-		require.Equal(t, false, entry.Inputs[2])
+		require.Equal(t, false, entry.Inputs[1])
 		require.Empty(t, entry.Policy) // pin is the lockfile's default policy
 
 		value, ok := entry.Value.(string)

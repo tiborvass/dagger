@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
@@ -57,15 +56,28 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 
 type containerFromLockInputs struct {
 	ref                      string
-	platform                 string
 	latestRelease            bool
 	latestIncludeSubreleases bool
 	registryTransport        serverresolver.RegistryTransport
 }
 
+func (inputs containerFromLockInputs) lockInputs() []any {
+	lockInputs := []any{inputs.ref}
+	if inputs.latestRelease {
+		lockInputs = append(lockInputs, inputs.latestIncludeSubreleases)
+	}
+	if inputs.registryTransport.Protocol != "" {
+		lockInputs = append(lockInputs, string(inputs.registryTransport.Protocol))
+	}
+	if inputs.registryTransport.InsecureSkipTLSVerify {
+		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
+	}
+	return lockInputs
+}
+
 func parseContainerFromLockInputs(inputs []any) (containerFromLockInputs, error) {
 	var parsed containerFromLockInputs
-	if len(inputs) < 2 {
+	if len(inputs) < 1 {
 		return parsed, fmt.Errorf("invalid %s inputs %v", lockContainerFromOperation, inputs)
 	}
 
@@ -81,29 +93,25 @@ func parseContainerFromLockInputs(inputs []any) (containerFromLockInputs, error)
 	}
 	parsed.latestRelease = reference.IsNameOnly(refName)
 
-	minInputs, maxInputs := 2, 4
-	transportOffset := 2
+	inputOffset := 1
+	minInputs, maxInputs := inputOffset, inputOffset+2
+	transportOffset := inputOffset
 	if parsed.latestRelease {
-		minInputs, maxInputs = 3, 5
-		transportOffset = 3
+		minInputs++
+		maxInputs++
+		transportOffset++
 	}
 	if len(inputs) < minInputs || len(inputs) > maxInputs {
 		return parsed, fmt.Errorf("invalid %s inputs %v", lockContainerFromOperation, inputs)
 	}
 
-	platform, ok := inputs[1].(string)
-	if !ok || platform == "" {
-		return parsed, fmt.Errorf("invalid %s platform %v", lockContainerFromOperation, inputs[1])
-	}
-	parsed.platform = platform
-
 	if parsed.latestRelease {
-		includeSubreleases, ok := inputs[2].(bool)
+		includeSubreleases, ok := inputs[inputOffset].(bool)
 		if !ok {
 			return parsed, fmt.Errorf(
 				"invalid %s latestIncludeSubreleases %v",
 				lockContainerFromOperation,
-				inputs[2],
+				inputs[inputOffset],
 			)
 		}
 		parsed.latestIncludeSubreleases = includeSubreleases
@@ -223,18 +231,11 @@ func resolveContainerFromDigest(ctx context.Context, query *Query, inputs contai
 	}
 	refName = reference.TagNameOnly(refName)
 
-	platform, err := platforms.Parse(inputs.platform)
-	if err != nil {
-		return "", fmt.Errorf("parse platform %q: %w", inputs.platform, err)
-	}
-
-	_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
-		Platform:          ptr(platform),
-		ResolveMode:       serverresolver.ResolveModeDefault,
+	_, resolvedDigest, err := rslvr.ResolveImageDigest(ctx, refName.String(), serverresolver.ResolveImageDigestOpts{
 		RegistryTransport: inputs.registryTransport,
 	})
 	if err != nil {
-		return "", fmt.Errorf("resolve image %q (platform: %q): %w", refName.String(), inputs.platform, err)
+		return "", fmt.Errorf("resolve image %q: %w", refName.String(), err)
 	}
 
 	return resolvedDigest, nil

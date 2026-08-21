@@ -1256,41 +1256,17 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	lockInputsFor := func(ref reference.Named, latest bool) []any {
-		inputs := []any{ref.String(), platform.Format()}
+		inputs := []any{ref.String()}
 		if latest {
 			inputs = append(inputs, args.LatestIncludeSubreleases)
 		}
 		if registryTransport.Protocol != "" {
-			inputs = append(inputs, registryTransport.Protocol)
+			inputs = append(inputs, string(registryTransport.Protocol))
 		}
 		if registryTransport.InsecureSkipTLSVerify {
 			inputs = append(inputs, "insecureSkipTLSVerify")
 		}
 		return inputs
-	}
-
-	// Engines that predate latest-release selection recorded a bare address like
-	// "alpine" as an exact container.from entry pinned at the implicit :latest
-	// tag. When the lockfile has such an entry and no latest-release
-	// entry, keep resolving through it so existing workspaces don't break
-	// after an engine upgrade.
-	if latestRelease && !args.LatestIncludeSubreleases && lookupLock != nil {
-		rawLock := lookupLock.lock
-		if _, ok, _ := rawLock.GetLookup(
-			lockCoreNamespace,
-			lockContainerFromOperation,
-			lockInputsFor(refName, true),
-		); !ok {
-			legacyRef := reference.TagNameOnly(refName)
-			if _, ok, err := rawLock.GetLookup(
-				lockCoreNamespace,
-				lockContainerFromOperation,
-				lockInputsFor(legacyRef, false),
-			); err == nil && ok {
-				latestRelease = false
-				refName = legacyRef
-			}
-		}
 	}
 
 	lockInputs := lockInputsFor(refName, latestRelease)

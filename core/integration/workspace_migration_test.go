@@ -1230,13 +1230,11 @@ type Myapp {
 
 	t.Run("apply moves legacy lockfile while staging migrated pins", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		platform, err := c.DefaultPlatform(ctx)
-		require.NoError(t, err)
 
 		source := "github.com/dagger/dagger/modules/wolfi@main"
 		pin := strings.Repeat("1", 40)
 		legacyLock := workspace.NewLock()
-		require.NoError(t, legacyLock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest", string(platform)}, workspace.LookupResult{
+		require.NoError(t, legacyLock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest"}, workspace.LookupResult{
 			Value:  "sha256:" + strings.Repeat("0", 64),
 			Policy: workspace.PolicyPin,
 		}))
