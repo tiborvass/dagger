@@ -2222,7 +2222,9 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `address` - Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    /// * `address` - Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+    ///
+    /// Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable semantic-version tag, falling back to the literal "latest" tag when no eligible release exists. Specify ":latest" explicitly to request the registry's literal "latest" tag.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn from(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("from");
@@ -2237,7 +2239,9 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `address` - Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+    /// * `address` - Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+    ///
+    /// Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable semantic-version tag, falling back to the literal "latest" tag when no eligible release exists. Specify ":latest" explicitly to request the registry's literal "latest" tag.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn from_opts(&self, address: impl Into<String>, opts: ContainerFromOpts) -> Container {
         let mut query = self.selection.select("from");

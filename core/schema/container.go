@@ -69,7 +69,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Download a container image, and apply it to the container state. All previous state will be lost.`).
 			Args(
 				dagql.Arg("address").Doc(
-					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
+					`Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".`,
+					`Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable semantic-version tag, falling back to the literal "latest" tag when no eligible release exists. Specify ":latest" explicitly to request the registry's literal "latest" tag.`,
 				),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
@@ -1070,6 +1071,14 @@ const (
 	lockContainerFromOperation = "container.from"
 )
 
+func containerFromUsesLatestRelease(
+	ctx context.Context,
+	ref reference.Named,
+	includeSubreleases bool,
+) bool {
+	return reference.IsNameOnly(ref) && (core.Supports(ctx, workspaceLockingVersion) || includeSubreleases)
+}
+
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
 var fromSessionScopeInput = dagql.ImplicitInput{
@@ -1131,7 +1140,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse image address %s: %w", args.Address, err)
 	}
-	latestRelease := reference.IsNameOnly(refName)
+	latestRelease := containerFromUsesLatestRelease(ctx, refName, args.LatestIncludeSubreleases)
 	if latestRelease {
 		refName = reference.TrimNamed(refName)
 	} else {

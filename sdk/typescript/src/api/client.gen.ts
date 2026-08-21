@@ -4668,7 +4668,9 @@ export class Container extends BaseClient {
 
   /**
    * Download a container image, and apply it to the container state. All previous state will be lost.
-   * @param address Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"
+   * @param address Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".
+   *
+   * Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable semantic-version tag, falling back to the literal "latest" tag when no eligible release exists. Specify ":latest" explicitly to request the registry's literal "latest" tag.
    * @param opts.registryService Service to use as the registry endpoint for the image address.
    *
    * The service will be started only for this pull.
