@@ -155,55 +155,9 @@ func TestSelectLatestGitRefEquivalentVersionsDeterministic(t *testing.T) {
 	}
 }
 
-func TestGitRefPinRoundTrip(t *testing.T) {
+func TestValidateGitLatestRef(t *testing.T) {
 	t.Parallel()
 
-	ref := &gitutil.Ref{
-		Name: "refs/tags/v1.2.3",
-		SHA:  "0123456789abcdef0123456789abcdef01234567",
-	}
-	pin, err := EncodeGitRefPin(ref)
-	require.NoError(t, err)
-	require.Equal(t, "refs/tags/v1.2.3@0123456789abcdef0123456789abcdef01234567", pin)
-
-	decoded, err := DecodeGitRefPin(pin)
-	require.NoError(t, err)
-	require.Equal(t, ref, decoded)
-}
-
-func TestGitRefPinRoundTripWithAtInRefName(t *testing.T) {
-	t.Parallel()
-
-	ref := &gitutil.Ref{
-		Name: "refs/tags/release@v1.2.3",
-		SHA:  "0123456789abcdef0123456789abcdef01234567",
-	}
-	pin, err := EncodeGitRefPin(ref)
-	require.NoError(t, err)
-
-	decoded, err := DecodeGitRefPin(pin)
-	require.NoError(t, err)
-	require.Equal(t, ref, decoded)
-}
-
-func TestDecodeGitRefPinRejectsInvalidPins(t *testing.T) {
-	t.Parallel()
-
-	for _, pin := range []string{
-		"",
-		"refs/tags/v1.2.3",
-		"@0123456789abcdef0123456789abcdef01234567",
-		"refs/tags/v1.2.3@not-a-commit",
-	} {
-		_, err := DecodeGitRefPin(pin)
-		require.Error(t, err, pin)
-	}
-}
-
-func TestDecodeGitLatestRefPinValidatesSelectedRef(t *testing.T) {
-	t.Parallel()
-
-	const commit = "0123456789abcdef0123456789abcdef01234567"
 	for _, tc := range []struct {
 		name               string
 		ref                string
@@ -212,46 +166,39 @@ func TestDecodeGitLatestRefPinValidatesSelectedRef(t *testing.T) {
 	}{
 		{name: "stable tag", ref: "refs/tags/v1.2.3"},
 		{name: "stable tag without v", ref: "refs/tags/1.2.3"},
-		{name: "head", ref: "HEAD"},
+		{name: "uncanonicalized head", ref: "HEAD", wantErr: "invalid git-latest ref"},
 		{name: "default branch", ref: "refs/heads/main"},
 		{name: "non-semver tag", ref: "refs/tags/latest", wantErr: "not a semantic version"},
 		{name: "prerelease tag", ref: "refs/tags/v2.0.0-rc.1", wantErr: "prerelease tags are not supported"},
 		{name: "included prerelease tag", ref: "refs/tags/v2.0.0-rc.1", includeSubreleases: true},
-		{name: "arbitrary ref", ref: "refs/pull/1/head", wantErr: "invalid git.latest ref"},
-		{name: "empty branch", ref: "refs/heads/", wantErr: "invalid git.latest ref"},
+		{name: "arbitrary ref", ref: "refs/pull/1/head", wantErr: "invalid git-latest ref"},
+		{name: "empty branch", ref: "refs/heads/", wantErr: "invalid git-latest ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ref, err := DecodeGitLatestRefPin(
-				tc.ref+"@"+commit,
-				tc.includeSubreleases,
-			)
+			err := ValidateGitLatestRef(tc.ref, tc.includeSubreleases, "")
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.ref, ref.Name)
-			require.Equal(t, commit, ref.SHA)
 		})
 	}
 }
 
-func TestDecodeGitLatestRefPinWithTagPrefix(t *testing.T) {
+func TestValidateGitLatestRefWithTagPrefix(t *testing.T) {
 	t.Parallel()
 
-	const commit = "0123456789abcdef0123456789abcdef01234567"
-	ref, err := DecodeGitLatestRefPinWithTagPrefix(
-		"refs/tags/module/v1.2.3@"+commit,
+	err := ValidateGitLatestRef(
+		"refs/tags/module/v1.2.3",
 		false,
 		"module",
 	)
 	require.NoError(t, err)
-	require.Equal(t, "refs/tags/module/v1.2.3", ref.Name)
 
-	_, err = DecodeGitLatestRefPinWithTagPrefix(
-		"refs/tags/other/v1.2.3@"+commit,
+	err = ValidateGitLatestRef(
+		"refs/tags/other/v1.2.3",
 		false,
 		"module",
 	)

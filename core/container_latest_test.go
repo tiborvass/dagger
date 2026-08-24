@@ -48,39 +48,30 @@ func TestSelectLatestContainerTag(t *testing.T) {
 	}
 }
 
-func TestParseContainerLatestPin(t *testing.T) {
+func TestValidateContainerLatestTag(t *testing.T) {
 	t.Parallel()
 
-	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	for _, tc := range []struct {
 		name               string
-		pin                string
+		tag                string
 		includeSubreleases bool
 		wantErr            string
 	}{
-		{name: "stable", pin: "docker.io/library/alpine:3.22.1@" + digest},
-		{name: "stable with v", pin: "docker.io/library/alpine:v3.22.1@" + digest},
-		{name: "latest fallback", pin: "docker.io/library/alpine:latest@" + digest},
-		{name: "missing digest", pin: "docker.io/library/alpine:3.22.1", wantErr: "has no digest"},
-		{name: "missing tag", pin: "docker.io/library/alpine@" + digest, wantErr: "has no tag"},
-		{name: "wrong repository", pin: "docker.io/library/busybox:1.0.0@" + digest, wantErr: "does not match"},
-		{name: "prerelease", pin: "docker.io/library/alpine:v4.0.0-rc.1@" + digest, wantErr: "not a stable semantic version"},
-		{name: "included prerelease", pin: "docker.io/library/alpine:v4.0.0-rc.1@" + digest, includeSubreleases: true},
-		{name: "non-semver", pin: "docker.io/library/alpine:edge@" + digest, wantErr: "not a semantic version"},
+		{name: "stable", tag: "3.22.1"},
+		{name: "stable with v", tag: "v3.22.1"},
+		{name: "latest fallback", tag: "latest"},
+		{name: "prerelease", tag: "v4.0.0-rc.1", wantErr: "not a stable semantic version"},
+		{name: "included prerelease", tag: "v4.0.0-rc.1", includeSubreleases: true},
+		{name: "non-semver", tag: "edge", wantErr: "not a semantic version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ref, err := ParseContainerLatestPin(
-				tc.pin,
-				"docker.io/library/alpine",
-				tc.includeSubreleases,
-			)
+			err := ValidateContainerLatestTag(tc.tag, tc.includeSubreleases)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.pin, ref.String())
 		})
 	}
 }

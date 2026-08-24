@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/distribution/reference"
 	"golang.org/x/mod/semver"
 )
 
@@ -33,51 +32,20 @@ func SelectLatestContainerTag(tags []string, includeSubreleases bool) string {
 	return bestTag
 }
 
-// ParseContainerLatestPin validates a full tag-and-digest pin for repository.
-func ParseContainerLatestPin(pin, repository string, includeSubreleases bool) (reference.Named, error) {
-	ref, err := reference.ParseNormalizedNamed(pin)
-	if err != nil {
-		return nil, fmt.Errorf("parse container.from latest-release pin %q: %w", pin, err)
-	}
-	if _, ok := ref.(reference.Canonical); !ok {
-		return nil, fmt.Errorf("container.from latest-release pin %q has no digest", pin)
-	}
-	tagged, ok := ref.(reference.NamedTagged)
-	if !ok {
-		return nil, fmt.Errorf("container.from latest-release pin %q has no tag", pin)
-	}
-
-	expected, err := reference.ParseNormalizedNamed(repository)
-	if err != nil {
-		return nil, fmt.Errorf("parse container.from latest-release repository %q: %w", repository, err)
-	}
-	if reference.TrimNamed(ref).Name() != reference.TrimNamed(expected).Name() {
-		return nil, fmt.Errorf(
-			"container.from latest-release pin repository %q does not match %q",
-			reference.TrimNamed(ref).Name(),
-			reference.TrimNamed(expected).Name(),
-		)
-	}
-
-	tag := tagged.Tag()
+// ValidateContainerLatestTag validates a tag selected by oci-latest.
+func ValidateContainerLatestTag(tag string, includePrereleases bool) error {
 	if tag == "latest" {
-		return ref, nil
+		return nil
 	}
 	version := tag
 	if !strings.HasPrefix(version, "v") {
 		version = "v" + version
 	}
 	if !semver.IsValid(version) {
-		return nil, fmt.Errorf(
-			"container.from latest-release pin tag %q is not a semantic version",
-			tag,
-		)
+		return fmt.Errorf("tag %q is not a semantic version", tag)
 	}
-	if !includeSubreleases && semver.Prerelease(version) != "" {
-		return nil, fmt.Errorf(
-			"container.from latest-release pin tag %q is not a stable semantic version",
-			tag,
-		)
+	if !includePrereleases && semver.Prerelease(version) != "" {
+		return fmt.Errorf("tag %q is not a stable semantic version", tag)
 	}
-	return ref, nil
+	return nil
 }

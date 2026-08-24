@@ -11,7 +11,6 @@ import (
 
 const (
 	versionKey     = "version"
-	versionValueV1 = "1"
 	versionValueV2 = "2"
 	versionCurrent = versionValueV2
 )
@@ -33,7 +32,6 @@ type lockEntry struct {
 	inputs     []any
 	inputsJSON string
 	value      any
-	policy     string
 }
 
 // Entry is a single lockfile tuple entry.
@@ -42,7 +40,6 @@ type Entry struct {
 	Operation string
 	Inputs    []any
 	Value     any
-	Policy    string
 }
 
 // New returns an empty lockfile.
@@ -101,7 +98,17 @@ func (l *Lockfile) Marshal() ([]byte, error) {
 	lines = append(lines, header)
 
 	for _, entry := range l.sortedEntries() {
-		line, err := json.Marshal([]any{entry.namespace, entry.operation, entry.inputs, entry.value})
+		requiredInputs, options := splitOptions(entry.inputs)
+		tuple := []any{
+			entry.namespace,
+			entry.operation,
+			requiredInputs,
+			entry.value,
+		}
+		if len(options) > 0 {
+			tuple = append(tuple, options)
+		}
+		line, err := json.Marshal(tuple)
 		if err != nil {
 			return nil, fmt.Errorf("marshal lockfile entry %q %q: %w", entry.namespace, entry.operation, err)
 		}
@@ -111,39 +118,28 @@ func (l *Lockfile) Marshal() ([]byte, error) {
 	return bytes.Join(lines, []byte("\n")), nil
 }
 
-// Get retrieves the value and any legacy v1 policy for (namespace, operation,
-// inputs). Version 2 entries have no policy.
-func (l *Lockfile) Get(namespace, operation string, inputs []any) (any, string, bool) {
+// Get retrieves the value for (namespace, operation, inputs).
+func (l *Lockfile) Get(namespace, operation string, inputs []any) (any, bool) {
 	if l == nil || len(l.entries) == 0 {
-		return nil, "", false
+		return nil, false
 	}
 	_, inputsJSON, err := canonicalizeInputs(inputs)
 	if err != nil {
-		return nil, "", false
+		return nil, false
 	}
 	entry, ok := l.entries[entryKey(namespace, operation, inputsJSON)]
 	if !ok {
-		return nil, "", false
+		return nil, false
 	}
 	value, err := canonicalizeValue(entry.value)
 	if err != nil {
-		return nil, "", false
+		return nil, false
 	}
-	return value, entry.policy, true
+	return value, true
 }
 
 // Set records the value for (namespace, operation, inputs).
 func (l *Lockfile) Set(namespace, operation string, inputs []any, value any) error {
-	return l.set(namespace, operation, inputs, value, "")
-}
-
-// SetWithLegacyPolicy records a value while preserving a version 1 policy in
-// memory. Marshal still writes version 2 and omits the policy.
-func (l *Lockfile) SetWithLegacyPolicy(namespace, operation string, inputs []any, value any, policy string) error {
-	return l.set(namespace, operation, inputs, value, policy)
-}
-
-func (l *Lockfile) set(namespace, operation string, inputs []any, value any, policy string) error {
 	if l == nil {
 		return fmt.Errorf("nil lockfile")
 	}
@@ -166,7 +162,6 @@ func (l *Lockfile) set(namespace, operation string, inputs []any, value any, pol
 		inputs:     canonicalInputs,
 		inputsJSON: inputsJSON,
 		value:      canonicalValue,
-		policy:     policy,
 	}
 	return nil
 }
@@ -209,7 +204,6 @@ func (l *Lockfile) Entries() []Entry {
 			Operation: entry.operation,
 			Inputs:    inputs,
 			Value:     value,
-			Policy:    entry.policy,
 		})
 	}
 	return entries
@@ -231,7 +225,7 @@ func parseVersionHeader(line []byte) (string, error) {
 		return "", fmt.Errorf("missing version header")
 	}
 	version := versionPair[1]
-	if version != versionValueV1 && version != versionValueV2 {
+	if version != versionValueV2 {
 		return "", fmt.Errorf("unsupported lockfile version %q", version)
 	}
 	return version, nil
@@ -242,12 +236,12 @@ func parseEntry(line []byte, version string) (lockEntry, error) {
 	if err := decodeJSON(line, &tuple); err != nil {
 		return lockEntry{}, fmt.Errorf("invalid tuple JSON: %w", err)
 	}
-	expectedLen := 4
-	if version == versionValueV1 {
-		expectedLen = 5
-	}
-	if len(tuple) != expectedLen {
-		return lockEntry{}, fmt.Errorf("invalid tuple length %d: expected %d for lockfile version %s", len(tuple), expectedLen, version)
+	if len(tuple) < 4 || len(tuple) > 5 {
+		return lockEntry{}, fmt.Errorf(
+			"invalid tuple length %d: expected 4 or 5 for lockfile version %s",
+			len(tuple),
+			version,
+		)
 	}
 
 	var namespace string
@@ -264,6 +258,18 @@ func parseEntry(line []byte, version string) (lockEntry, error) {
 	if err := decodeJSON(tuple[2], &inputs); err != nil {
 		return lockEntry{}, fmt.Errorf("invalid inputs: %w", err)
 	}
+	if len(tuple) == 5 {
+		var options []any
+		if err := decodeJSON(tuple[4], &options); err != nil {
+			return lockEntry{}, fmt.Errorf("invalid options: %w", err)
+		}
+		if err := validateOptions(options); err != nil {
+			return lockEntry{}, fmt.Errorf("invalid options: %w", err)
+		}
+		if len(options) > 0 {
+			inputs = append(inputs, options)
+		}
+	}
 	canonicalInputs, inputsJSON, err := canonicalizeInputs(inputs)
 	if err != nil {
 		return lockEntry{}, fmt.Errorf("canonicalizing inputs: %w", err)
@@ -277,20 +283,12 @@ func parseEntry(line []byte, version string) (lockEntry, error) {
 	if err != nil {
 		return lockEntry{}, fmt.Errorf("canonicalizing value: %w", err)
 	}
-	var policy string
-	if version == versionValueV1 {
-		if err := decodeJSON(tuple[4], &policy); err != nil {
-			return lockEntry{}, fmt.Errorf("invalid policy: %w", err)
-		}
-	}
-
 	return lockEntry{
 		namespace:  namespace,
 		operation:  operation,
 		inputs:     canonicalInputs,
 		inputsJSON: inputsJSON,
 		value:      canonicalValue,
-		policy:     policy,
 	}, nil
 }
 
@@ -309,7 +307,52 @@ func canonicalizeInputs(inputs []any) ([]any, string, error) {
 	if err := validateOrderedInputs(canonical); err != nil {
 		return nil, "", err
 	}
+	if required, options := splitOptions(canonical); len(options) > 0 {
+		sort.Slice(options, func(i, j int) bool {
+			return options[i].([]any)[0].(string) < options[j].([]any)[0].(string)
+		})
+		required = append(required, options)
+		canonical = required
+	}
+	data, err = json.Marshal(canonical)
+	if err != nil {
+		return nil, "", err
+	}
 	return canonical, string(data), nil
+}
+
+func splitOptions(inputs []any) ([]any, []any) {
+	if len(inputs) == 0 || !isOptions(inputs[len(inputs)-1]) {
+		return inputs, nil
+	}
+	return inputs[:len(inputs)-1], inputs[len(inputs)-1].([]any)
+}
+
+func isOptions(value any) bool {
+	options, ok := value.([]any)
+	if !ok || len(options) == 0 {
+		return false
+	}
+	return validateOptions(options) == nil
+}
+
+func validateOptions(options []any) error {
+	seen := map[string]struct{}{}
+	for _, option := range options {
+		pair, ok := option.([]any)
+		if !ok || len(pair) != 2 {
+			return fmt.Errorf("option must be a key-value pair")
+		}
+		name, ok := pair[0].(string)
+		if !ok || name == "" {
+			return fmt.Errorf("option name must be a non-empty string")
+		}
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("duplicate option %q", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
 }
 
 func canonicalizeValue(value any) (any, error) {

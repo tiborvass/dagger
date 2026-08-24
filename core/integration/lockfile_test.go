@@ -11,7 +11,6 @@ package core
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,15 +50,6 @@ const (
 	lockTestGitTagOldCommit = "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb"
 )
 
-const gitBranchCommitQuery = `{
-  git(url: "` + lockTestGitRepoURL + `") {
-    branch(name: "main") {
-      commit
-    }
-  }
-}
-`
-
 const gitBranchAndTagCommitQuery = `{
   git(url: "` + lockTestGitRepoURL + `") {
     branch(name: "main") {
@@ -92,20 +82,20 @@ func hostGitInit(t *testctx.T, dir string) {
 	require.NoError(t, err, out)
 }
 
-func (LockfileSuite) TestDefaultMigratesV1FloatEntry(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestDefaultRejectsV1Lockfile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
-	lockPath, originalLock := writeContainerFromLock(t, workdir, "not-a-digest", workspace.PolicyFloat)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	lockContents := strings.Join([]string{
+		`[["version","1"]]`,
+		`["","container.from",["alpine:latest"],"not-a-digest","pin"]`,
+	}, "\n")
+	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-	require.NoError(t, err)
-
-	lockBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.NotEqual(t, originalLock, string(lockBytes))
-	assertContainerFromLockEntry(t, lockBytes)
+	require.ErrorContains(t, err, `unsupported lockfile version "1"`)
 }
 
 func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Context, t *testctx.T) {
@@ -120,26 +110,6 @@ func (LockfileSuite) TestDefaultRemoteCommitDoesNotMutateLock(ctx context.Contex
 	committedLock, err := c.Git(remote.repoURL).Commit(remote.commit).Tree().File(workspace.LockFileName).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, lockContents, committedLock)
-}
-
-func (LockfileSuite) TestDefaultMigratesV1FloatGitEntry(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeQueryDoc(t, workdir, "git-branch.graphql", gitBranchCommitQuery)
-	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
-
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
-	require.NoError(t, err)
-	require.NotContains(t, string(out), lockTestGitBranchCommit)
-
-	lockBytes, err := os.ReadFile(lockPath)
-	require.NoError(t, err)
-	require.NotEqual(t, originalLock, string(lockBytes))
-	assertGitLockEntry(t, lockBytes, []any{
-		lockTestGitRepoURL,
-		"refs/heads/" + lockTestGitBranchName,
-	})
 }
 
 func (LockfileSuite) TestUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {
@@ -175,7 +145,7 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitEntry(ctx context.Context, t 
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
-	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
+	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyPin)
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
@@ -364,12 +334,9 @@ func writeGitRefLock(t *testctx.T, workdir, operation, name, commit string, poli
 
 func mustMarshalContainerFromLock(t *testctx.T, digest string, policy workspace.LockPolicy) string {
 	t.Helper()
-	if policy == workspace.PolicyFloat {
-		return mustMarshalLegacyV1Lock(t, "container.from", []any{"docker.io/library/alpine:latest"}, digest, policy)
-	}
 
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest"}, workspace.LookupResult{
+	require.NoError(t, lock.SetLookup("", "oci-sha", []any{"docker.io/library/alpine:latest"}, workspace.LookupResult{
 		Value:  digest,
 		Policy: policy,
 	}))
@@ -382,51 +349,28 @@ func mustMarshalContainerFromLock(t *testctx.T, digest string, policy workspace.
 func mustMarshalGitRefLock(t *testctx.T, operation, name, commit string, policy workspace.LockPolicy) string {
 	t.Helper()
 
-	inputs := []any{lockTestGitRepoURL}
-	if name != "" {
-		inputs = append(inputs, name)
-	}
-	if policy == workspace.PolicyFloat {
-		return mustMarshalLegacyV1Lock(t, operation, inputs, commit, policy)
-	}
-
 	selector := name
-	resultRef := ""
 	switch operation {
 	case "git.head":
 		selector = "HEAD"
 	case "git.branch":
 		selector = "refs/heads/" + strings.TrimPrefix(name, "refs/heads/")
-		resultRef = selector
 	case "git.tag":
 		selector = "refs/tags/" + strings.TrimPrefix(name, "refs/tags/")
-		resultRef = selector
 	case "git.ref":
-		if strings.HasPrefix(name, "refs/") {
-			resultRef = name
-		}
 	default:
 		require.FailNow(t, "unsupported Git lock operation", operation)
 	}
 
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup("", "git.ref", []any{lockTestGitRepoURL, selector}, workspace.LookupResult{
-		Value: workspace.GitRefLockResult{
-			SHA: commit,
-			Ref: resultRef,
-		},
+	require.NoError(t, lock.SetLookup("", "git-sha", []any{lockTestGitRepoURL, selector}, workspace.LookupResult{
+		Value:  commit,
 		Policy: policy,
 	}))
 
 	lockBytes, err := lock.Marshal()
 	require.NoError(t, err)
 	return string(lockBytes)
-}
-func mustMarshalLegacyV1Lock(t *testctx.T, operation string, inputs []any, value string, policy workspace.LockPolicy) string {
-	t.Helper()
-	entry, err := json.Marshal([]any{"", operation, inputs, value, string(policy)})
-	require.NoError(t, err)
-	return `[["version","1"]]` + "\n" + string(entry)
 }
 
 func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
@@ -437,7 +381,7 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
 
 	var found bool
 	for _, entry := range parsed.Entries() {
-		if entry.Namespace != "" || entry.Operation != "container.from" {
+		if entry.Namespace != "" || entry.Operation != "oci-sha" {
 			continue
 		}
 		found = true
@@ -447,14 +391,12 @@ func assertContainerFromLockEntry(t *testctx.T, lockBytes []byte) {
 		require.True(t, ok)
 		require.Contains(t, ref, "alpine:latest")
 
-		require.Empty(t, entry.Policy)
-
 		value, ok := entry.Value.(string)
 		require.True(t, ok)
 		require.True(t, strings.HasPrefix(value, "sha256:"))
 	}
 
-	require.True(t, found, "expected container.from entry in lockfile")
+	require.True(t, found, "expected oci-sha entry in lockfile")
 }
 
 func assertGitLockEntry(t *testctx.T, lockBytes []byte, expectedInputs []any) {
@@ -465,7 +407,7 @@ func assertGitLockEntry(t *testctx.T, lockBytes []byte, expectedInputs []any) {
 
 	var found bool
 	for _, entry := range parsed.Entries() {
-		if entry.Namespace != "" || entry.Operation != "git.ref" {
+		if entry.Namespace != "" || entry.Operation != "git-sha" {
 			continue
 		}
 		if !equalLockInputs(entry.Inputs, expectedInputs) {
@@ -473,17 +415,12 @@ func assertGitLockEntry(t *testctx.T, lockBytes []byte, expectedInputs []any) {
 		}
 
 		found = true
-		require.Empty(t, entry.Policy)
-
-		result, err := workspace.ParseGitRefLockResult(entry.Value)
-		require.NoError(t, err)
-		require.Len(t, result.SHA, 40)
-		if len(expectedInputs) == 2 {
-			require.Equal(t, expectedInputs[1], result.Ref)
-		}
+		result, ok := entry.Value.(string)
+		require.True(t, ok)
+		require.Len(t, result, 40)
 	}
 
-	require.True(t, found, "expected git.ref entry in lockfile")
+	require.True(t, found, "expected git-sha entry in lockfile")
 }
 
 func assertNoModuleResolveLockEntry(t *testctx.T, lockBytes []byte) {
@@ -543,79 +480,6 @@ func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(out), "refs/tags/"+lockTestGitTagName)
 	require.Contains(t, string(out), lockTestGitTagOldCommit)
-}
-
-func (LockfileSuite) TestGitLatestMigratesLegacyHeadPin(ctx context.Context, t *testctx.T) {
-	const (
-		unavailableRemote = "git://example.invalid/dagger.git"
-		pinnedRef         = "refs/heads/main"
-		pinnedCommit      = "0123456789abcdef0123456789abcdef01234567"
-	)
-
-	workdir := t.TempDir()
-	hostGitInit(t, workdir)
-	writeEmptyWorkspaceConfig(t, workdir)
-	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
-  git(url: "`+unavailableRemote+`") {
-    latest {
-      ref
-      commit
-    }
-  }
-}
-`)
-
-	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup(
-		"",
-		"git.ref",
-		[]any{unavailableRemote, "HEAD"},
-		workspace.LookupResult{
-			Value: workspace.GitRefLockResult{
-				SHA: pinnedCommit,
-				Ref: pinnedRef,
-			},
-			Policy: workspace.PolicyPin,
-		},
-	))
-	lockBytes, err := lock.Marshal()
-	require.NoError(t, err)
-	lockPath := filepath.Join(workdir, workspace.LockFileName)
-	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
-
-	out, err := hostDaggerExec(
-		ctx,
-		t,
-		workdir,
-		"--silent",
-		"query",
-		"--doc",
-		queryPath,
-	)
-	require.NoError(t, err)
-	require.Contains(t, string(out), pinnedRef)
-	require.Contains(t, string(out), pinnedCommit)
-
-	lockBytes, err = os.ReadFile(lockPath)
-	require.NoError(t, err)
-	lock, err = workspace.ParseLock(lockBytes)
-	require.NoError(t, err)
-	latest, ok, err := lock.GetLookup(
-		"",
-		"git.latest",
-		[]any{unavailableRemote, false},
-	)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, pinnedRef+"@"+pinnedCommit, latest.Value)
-
-	_, ok, err = lock.GetLookup(
-		"",
-		"git.ref",
-		[]any{unavailableRemote, "HEAD"},
-	)
-	require.NoError(t, err)
-	require.True(t, ok)
 }
 
 func (LockfileSuite) TestGitLatestPinnedDoesNotLoadRemoteMetadata(ctx context.Context, t *testctx.T) {
@@ -720,10 +584,10 @@ func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t
 		"--doc",
 		queryPath,
 	)
-	require.ErrorContains(t, err, `invalid git.latest ref "refs/pull/1/head"`)
+	require.ErrorContains(t, err, `invalid git-latest ref "refs/pull/1/head"`)
 }
 
-// dagger update must refresh git.latest entries for private repositories: the
+// dagger update must refresh git-latest entries for private repositories: the
 // lock stores only the remote URL, so the update path has to recover the same
 // credential-helper access that created the pin.
 func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Context, t *testctx.T) {
@@ -795,8 +659,14 @@ func writeGitLatestLockForRemote(
 	t.Helper()
 
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetLookup("", "git.latest", []any{remoteURL, false}, workspace.LookupResult{
-		Value:  pin,
+	ref, commit, found := strings.Cut(pin, "@")
+	require.True(t, found)
+	require.NoError(t, lock.SetLookup("", "git-latest", []any{remoteURL}, workspace.LookupResult{
+		Value:  ref,
+		Policy: workspace.PolicyPin,
+	}))
+	require.NoError(t, lock.SetLookup("", "git-sha", []any{remoteURL, ref}, workspace.LookupResult{
+		Value:  commit,
 		Policy: workspace.PolicyPin,
 	}))
 	lockBytes, err := lock.Marshal()
@@ -812,21 +682,20 @@ func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
 
 	parsed, err := lockfile.Parse(lockBytes)
 	require.NoError(t, err)
+	var selectedRef string
 	for _, entry := range parsed.Entries() {
-		if entry.Namespace != "" || entry.Operation != "git.latest" {
+		if entry.Namespace != "" || entry.Operation != "git-latest" {
 			continue
 		}
-		require.Equal(t, []any{lockTestGitRepoURL, false}, entry.Inputs)
-		require.Empty(t, entry.Policy) // pin is the lockfile's default policy
-		value, ok := entry.Value.(string)
+		require.Equal(t, []any{lockTestGitRepoURL}, entry.Inputs)
+		var ok bool
+		selectedRef, ok = entry.Value.(string)
 		require.True(t, ok)
-		ref, commit, found := strings.Cut(value, "@")
-		require.True(t, found)
-		require.True(t, strings.HasPrefix(ref, "refs/tags/"), ref)
-		require.Len(t, commit, 40)
-		return
+		require.True(t, strings.HasPrefix(selectedRef, "refs/tags/"), selectedRef)
+		break
 	}
-	require.Fail(t, "expected git.latest entry in lockfile")
+	require.NotEmpty(t, selectedRef, "expected git-latest entry in lockfile")
+	assertGitLockEntry(t, lockBytes, []any{lockTestGitRepoURL, selectedRef})
 }
 
 const containerFromLatestImageRefQuery = `{
@@ -876,13 +745,25 @@ func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t
 func writeContainerFromLatestLock(t *testctx.T, workdir, pin string) {
 	t.Helper()
 
+	ref, imageDigest, found := strings.Cut(pin, "@")
+	require.True(t, found)
+	tag := strings.TrimPrefix(ref, "docker.io/library/alpine:")
 	lock := workspace.NewLock()
 	require.NoError(t, lock.SetLookup(
 		"",
-		"container.from",
-		[]any{"docker.io/library/alpine", false},
+		"oci-latest",
+		[]any{"docker.io/library/alpine"},
 		workspace.LookupResult{
-			Value:  pin,
+			Value:  tag,
+			Policy: workspace.PolicyPin,
+		},
+	))
+	require.NoError(t, lock.SetLookup(
+		"",
+		"oci-sha",
+		[]any{ref},
+		workspace.LookupResult{
+			Value:  imageDigest,
 			Policy: workspace.PolicyPin,
 		},
 	))
@@ -901,31 +782,40 @@ func assertContainerFromLatestLockEntry(t *testctx.T, lockBytes []byte) string {
 	parsed, err := lockfile.Parse(lockBytes)
 	require.NoError(t, err)
 
+	var selectedTag string
 	for _, entry := range parsed.Entries() {
-		if entry.Namespace != "" || entry.Operation != "container.from" {
+		if entry.Namespace != "" || entry.Operation != "oci-latest" {
 			continue
 		}
-		require.Len(t, entry.Inputs, 2)
+		require.Len(t, entry.Inputs, 1)
 		require.Equal(t, "docker.io/library/alpine", entry.Inputs[0])
-		require.Equal(t, false, entry.Inputs[1])
-		require.Empty(t, entry.Policy) // pin is the lockfile's default policy
-
-		value, ok := entry.Value.(string)
+		var ok bool
+		selectedTag, ok = entry.Value.(string)
 		require.True(t, ok)
-		tagAndDigest := strings.TrimPrefix(value, "docker.io/library/alpine:")
-		tag, imageDigest, found := strings.Cut(tagAndDigest, "@")
-		require.True(t, found, "expected tag and digest in %q", value)
-		require.True(t, strings.HasPrefix(imageDigest, "sha256:"), imageDigest)
 
-		version := tag
+		version := selectedTag
 		if !strings.HasPrefix(version, "v") {
 			version = "v" + version
 		}
-		require.True(t, semver.IsValid(version), "expected semantic-version tag in %q", value)
-		require.Empty(t, semver.Prerelease(version), "expected stable tag in %q", value)
-		return value
+		require.True(t, semver.IsValid(version), "expected semantic-version tag in %q", selectedTag)
+		require.Empty(t, semver.Prerelease(version), "expected stable tag in %q", selectedTag)
+		break
 	}
 
-	require.FailNow(t, "expected latest-release container.from entry in lockfile")
+	require.NotEmpty(t, selectedTag, "expected oci-latest entry in lockfile")
+	taggedRef := "docker.io/library/alpine:" + selectedTag
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "oci-sha" {
+			continue
+		}
+		if !equalLockInputs(entry.Inputs, []any{taggedRef}) {
+			continue
+		}
+		imageDigest, ok := entry.Value.(string)
+		require.True(t, ok)
+		require.True(t, strings.HasPrefix(imageDigest, "sha256:"), imageDigest)
+		return taggedRef + "@" + imageDigest
+	}
+	require.FailNow(t, "expected oci-sha entry for selected tag")
 	return ""
 }

@@ -163,56 +163,9 @@ func selectLatestGitRelease(
 	return bestRef
 }
 
-// EncodeGitRefPin stores both the symbolic ref and resolved commit in a single
-// lock value so frozen resolution can replay the ref without listing the remote.
-func EncodeGitRefPin(ref *gitutil.Ref) (string, error) {
-	if ref == nil {
-		return "", fmt.Errorf("encode git ref pin: nil ref")
-	}
-	if ref.Name == "" {
-		return "", fmt.Errorf("encode git ref pin: ref name is required")
-	}
-	if !gitutil.IsCommitSHA(ref.SHA) {
-		return "", fmt.Errorf("encode git ref pin: invalid commit SHA %q", ref.SHA)
-	}
-	return ref.Name + "@" + ref.SHA, nil
-}
-
-// DecodeGitRefPin decodes a symbolic-ref-and-commit lock value.
-func DecodeGitRefPin(pin string) (*gitutil.Ref, error) {
-	separator := strings.LastIndex(pin, "@")
-	if separator <= 0 {
-		return nil, fmt.Errorf("invalid git ref pin %q", pin)
-	}
-	name, sha := pin[:separator], pin[separator+1:]
-	if name == "" {
-		return nil, fmt.Errorf("invalid git ref pin %q", pin)
-	}
-	if !gitutil.IsCommitSHA(sha) {
-		return nil, fmt.Errorf("invalid git ref pin commit %q", sha)
-	}
-	return &gitutil.Ref{Name: name, SHA: sha}, nil
-}
-
-// DecodeGitLatestRefPin decodes and validates a pin produced by the latest Git
-// selector. Semantic-version tags and the HEAD fallback are valid.
-func DecodeGitLatestRefPin(pin string, includeSubreleases bool) (*gitutil.Ref, error) {
-	return DecodeGitLatestRefPinWithTagPrefix(pin, includeSubreleases, "")
-}
-
-// DecodeGitLatestRefPinWithTagPrefix validates a latest pin selected for a
-// monorepo tag prefix. Repository-wide release tags remain valid as fallback.
-func DecodeGitLatestRefPinWithTagPrefix(
-	pin string,
-	includeSubreleases bool,
-	tagPrefix string,
-) (*gitutil.Ref, error) {
-	ref, err := DecodeGitRefPin(pin)
-	if err != nil {
-		return nil, err
-	}
-
-	if tag, ok := strings.CutPrefix(ref.Name, "refs/tags/"); ok {
+// ValidateGitLatestRef validates a ref selected by git-latest.
+func ValidateGitLatestRef(refName string, includePrereleases bool, tagPrefix string) error {
+	if tag, ok := strings.CutPrefix(refName, "refs/tags/"); ok {
 		version := tag
 		tagPrefix = strings.Trim(tagPrefix, "/")
 		if tagPrefix != "" {
@@ -222,22 +175,18 @@ func DecodeGitLatestRefPinWithTagPrefix(
 			version = "v" + version
 		}
 		if !semver.IsValid(version) {
-			return nil, fmt.Errorf("invalid git.latest tag %q: not a semantic version", tag)
+			return fmt.Errorf("invalid git-latest tag %q: not a semantic version", tag)
 		}
-		if !includeSubreleases && semver.Prerelease(version) != "" {
-			return nil, fmt.Errorf("invalid git.latest tag %q: prerelease tags are not supported", tag)
+		if !includePrereleases && semver.Prerelease(version) != "" {
+			return fmt.Errorf("invalid git-latest tag %q: prerelease tags are not supported", tag)
 		}
-		return ref, nil
+		return nil
 	}
 
-	if ref.Name == "HEAD" {
-		return ref, nil
+	if branch, ok := strings.CutPrefix(refName, "refs/heads/"); ok && branch != "" {
+		return nil
 	}
-	if branch, ok := strings.CutPrefix(ref.Name, "refs/heads/"); ok && branch != "" {
-		return ref, nil
-	}
-
-	return nil, fmt.Errorf("invalid git.latest ref %q", ref.Name)
+	return fmt.Errorf("invalid git-latest ref %q", refName)
 }
 
 var _ dagql.PersistedObject = (*GitRepository)(nil)

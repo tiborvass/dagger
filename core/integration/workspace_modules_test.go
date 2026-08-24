@@ -87,7 +87,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
-		require.Contains(t, string(lockBytes), `"git.ref"`)
+		require.Contains(t, string(lockBytes), `"git-sha"`)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
 		current = c.CurrentWorkspace()
@@ -178,7 +178,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
 		assertNoModuleResolveLockEntry(t, lockBytes)
-		require.Contains(t, string(lockBytes), `"git.ref"`)
+		require.Contains(t, string(lockBytes), `"git-sha"`)
 
 		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)

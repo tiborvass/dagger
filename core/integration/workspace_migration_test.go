@@ -1234,13 +1234,13 @@ type Myapp {
 		source := "github.com/dagger/dagger/modules/wolfi@main"
 		pin := strings.Repeat("1", 40)
 		legacyLock := workspace.NewLock()
-		require.NoError(t, legacyLock.SetLookup("", "container.from", []any{"docker.io/library/alpine:latest"}, workspace.LookupResult{
+		require.NoError(t, legacyLock.SetLookup("", "oci-sha", []any{"docker.io/library/alpine:latest"}, workspace.LookupResult{
 			Value:  "sha256:" + strings.Repeat("0", 64),
 			Policy: workspace.PolicyPin,
 		}))
 		require.NoError(t, legacyLock.SetLookup("", "modules.resolve", []any{source}, workspace.LookupResult{
 			Value:  pin,
-			Policy: workspace.PolicyFloat,
+			Policy: workspace.PolicyPin,
 		}))
 		existingLockBytes, err := legacyLock.Marshal()
 		require.NoError(t, err)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -41,23 +40,15 @@ func withCurrentLockView(ctx context.Context) context.Context {
 func TestResolveLookupFromLock(t *testing.T) {
 	t.Parallel()
 
-	const operation = "container.from"
-	inputs := []any{"alpine:latest", "linux/amd64"}
+	const operation = "oci-sha"
+	inputs := []any{"alpine:latest"}
 
-	makeLock := func(t *testing.T, pin string, policy workspace.LockPolicy) *workspace.Lock {
+	makeLock := func(t *testing.T, pin string) *workspace.Lock {
 		t.Helper()
-		if policy == workspace.PolicyFloat {
-			data := fmt.Sprintf(`[["version","1"]]
-["","container.from",["alpine:latest","linux/amd64"],%q,%q]`, pin, policy)
-			lock, err := workspace.ParseLock([]byte(data))
-			require.NoError(t, err)
-			return lock
-		}
-
 		lock := workspace.NewLock()
 		require.NoError(t, lock.SetLookup(lockCoreNamespace, operation, inputs, workspace.LookupResult{
 			Value:  pin,
-			Policy: policy,
+			Policy: workspace.PolicyPin,
 		}))
 		return lock
 	}
@@ -75,23 +66,12 @@ func TestResolveLookupFromLock(t *testing.T) {
 	t.Run("existing pin entry", func(t *testing.T) {
 		t.Parallel()
 
-		loaded := &workspaceLookupLock{lock: makeLock(t, "sha256:abc123", workspace.PolicyPin)}
+		loaded := &workspaceLookupLock{lock: makeLock(t, "sha256:abc123")}
 		res, err := resolveLookupFromLoadedLock(loaded, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
 		require.Equal(t, "sha256:abc123", res.Pin)
 		require.Equal(t, workspace.PolicyPin, res.Policy)
 		require.False(t, res.ShouldWrite)
-	})
-
-	t.Run("version 1 float entry is refreshed", func(t *testing.T) {
-		t.Parallel()
-
-		loaded := &workspaceLookupLock{lock: makeLock(t, "sha256:def456", workspace.PolicyFloat)}
-		res, err := resolveLookupFromLoadedLock(loaded, operation, inputs, workspace.PolicyPin)
-		require.NoError(t, err)
-		require.Empty(t, res.Pin)
-		require.Equal(t, workspace.PolicyFloat, res.Policy)
-		require.True(t, res.ShouldWrite)
 	})
 
 	t.Run("missing entry is written", func(t *testing.T) {
@@ -105,30 +85,25 @@ func TestResolveLookupFromLock(t *testing.T) {
 		require.True(t, res.ShouldWrite)
 	})
 
-	t.Run("invalid lock entry result", func(t *testing.T) {
+	t.Run("refresh ignores existing pin without writing", func(t *testing.T) {
 		t.Parallel()
 
-		data := strings.Join([]string{
-			`[["version","1"]]`,
-			`["","container.from",["alpine:latest","linux/amd64"],"sha256:abc123","invalid"]`,
-		}, "\n")
-		lock, err := workspace.ParseLock([]byte(data))
+		loaded := &workspaceLookupLock{
+			lock:    makeLock(t, "sha256:abc123"),
+			refresh: true,
+		}
+		res, err := resolveLookupFromLoadedLock(loaded, operation, inputs, workspace.PolicyPin)
 		require.NoError(t, err)
-
-		_, err = resolveLookupFromLoadedLock(
-			&workspaceLookupLock{lock: lock},
-			operation,
-			inputs,
-			workspace.PolicyPin,
-		)
-		require.ErrorContains(t, err, "invalid lock entry")
+		require.Empty(t, res.Pin)
+		require.Equal(t, workspace.PolicyPin, res.Policy)
+		require.False(t, res.ShouldWrite)
 	})
 }
 
 func TestLookupLockForAPI(t *testing.T) {
 	t.Parallel()
 
-	const operation = "container.from"
+	const operation = "oci-sha"
 
 	t.Run("older API view disables locking", func(t *testing.T) {
 		t.Parallel()
@@ -172,7 +147,7 @@ func TestLookupLockForAPI(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, lock)
 
-		inputs := []any{"alpine:latest", "linux/amd64"}
+		inputs := []any{"alpine:latest"}
 		want := workspace.LookupResult{Value: "sha256:abc123", Policy: workspace.PolicyPin}
 		require.NoError(t, lock.SetLookup(lockCoreNamespace, operation, inputs, want))
 		got, ok, err := overlay.GetLookup(lockCoreNamespace, operation, inputs)
@@ -249,7 +224,7 @@ func TestReadWorkspaceLock(t *testing.T) {
 		t.Parallel()
 
 		legacy := workspace.NewLock()
-		require.NoError(t, legacy.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
+		require.NoError(t, legacy.SetLookup("", "oci-sha", []any{"alpine:latest"}, workspace.LookupResult{
 			Value:  "sha256:deadbeef",
 			Policy: workspace.PolicyPin,
 		}))
@@ -264,7 +239,7 @@ func TestReadWorkspaceLock(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, exists)
 
-		got, ok, err := lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+		got, ok, err := lock.GetLookup("", "oci-sha", []any{"alpine:latest"})
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, got)

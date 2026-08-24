@@ -1006,8 +1006,8 @@ type refArgs struct {
 }
 
 const (
-	lockGitLatestOperation = "git.latest"
-	lockGitRefOperation    = "git.ref"
+	lockGitLatestOperation = "git-latest"
+	lockGitSHAOperation    = "git-sha"
 )
 
 func gitLockInputs(repo *core.GitRepository, name string) ([]any, error) {
@@ -1033,7 +1033,7 @@ func gitRemoteHasWorkspacePin(ctx context.Context, remote string) bool {
 	}
 	for _, entry := range entries {
 		if entry.Namespace != lockCoreNamespace ||
-			!strings.HasPrefix(entry.Operation, "git.") ||
+			!strings.HasPrefix(entry.Operation, "git-") ||
 			entry.Result.Policy != workspace.PolicyPin ||
 			len(entry.Inputs) == 0 {
 			continue
@@ -1052,7 +1052,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		return inst, fmt.Errorf("invalid commit SHA: %q", args.Commit)
 	}
 	if args.LockOperation == "" && args.Commit == "" && !gitutil.IsCommitSHA(args.Name) {
-		args.LockOperation = lockGitRefOperation
+		args.LockOperation = lockGitSHAOperation
 		args.LockPolicy = string(workspace.PolicyPin)
 		args.LockName = args.Name
 	}
@@ -1089,23 +1089,23 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			return inst, fmt.Errorf("%s lock resolution: %w", args.LockOperation, err)
 		}
 		if lockResolution.Pin != nil {
-			locked, err := workspace.ParseGitRefLockResult(lockResolution.Pin)
-			if err != nil {
-				return inst, fmt.Errorf("invalid %s lock result: %w", args.LockOperation, err)
-			}
-			if !gitutil.IsCommitSHA(locked.SHA) {
-				return inst, fmt.Errorf("invalid locked commit SHA: %q", locked.SHA)
-			}
-			name := locked.Ref
-			if name == "" {
-				name = locked.SHA
+			lockedSHA, ok := lockResolution.Pin.(string)
+			if !ok || !gitutil.IsCommitSHA(lockedSHA) {
+				return inst, fmt.Errorf("invalid locked commit SHA: %q", lockedSHA)
 			}
 			ref := &gitutil.Ref{
-				Name: name,
-				SHA:  locked.SHA,
+				Name: args.LockName,
+				SHA:  lockedSHA,
 			}
 			return s.gitRefResult(ctx, parent, ref)
 		}
+	}
+
+	if args.Commit == "" && gitutil.IsCommitSHA(args.Name) {
+		return s.gitRefResult(ctx, parent, &gitutil.Ref{
+			Name: args.Name,
+			SHA:  args.Name,
+		})
 	}
 
 	remote, err := repo.LoadRemote(ctx)
@@ -1130,10 +1130,7 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 			args.LockOperation,
 			lockInputs,
 			workspace.LookupResult{
-				Value: workspace.GitRefLockResult{
-					SHA: ref.SHA,
-					Ref: ref.Name,
-				},
+				Value:  ref.SHA,
 				Policy: lockResolution.Policy,
 			},
 		); err != nil {
@@ -1201,7 +1198,7 @@ func (s *gitSchema) gitRefResult(ctx context.Context, parent dagql.ObjectResult[
 func (s *gitSchema) head(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args struct{}) (inst dagql.Result[*core.GitRef], _ error) {
 	return s.ref(ctx, parent, refArgs{
 		Name:          "HEAD",
-		LockOperation: lockGitRefOperation,
+		LockOperation: lockGitSHAOperation,
 		LockPolicy:    string(workspace.PolicyPin),
 		LockName:      "HEAD",
 	})
@@ -1260,7 +1257,7 @@ func (s *gitSchema) branch(ctx context.Context, parent dagql.ObjectResult[*core.
 	return s.ref(ctx, parent, refArgs{
 		Name:          args.Name,
 		Commit:        args.Commit,
-		LockOperation: lockGitRefOperation,
+		LockOperation: lockGitSHAOperation,
 		LockPolicy:    string(workspace.PolicyPin),
 		LockName:      lockName,
 	})
@@ -1276,7 +1273,7 @@ func (s *gitSchema) tag(ctx context.Context, parent dagql.ObjectResult[*core.Git
 	return s.ref(ctx, parent, refArgs{
 		Name:          args.Name,
 		Commit:        args.Commit,
-		LockOperation: lockGitRefOperation,
+		LockOperation: lockGitSHAOperation,
 		LockPolicy:    string(workspace.PolicyPin),
 		LockName:      lockName,
 	})
@@ -2094,44 +2091,6 @@ type latestArgs struct {
 	TagPrefix          string `name:"tagPrefix" default:""`
 }
 
-func legacyGitLatestHeadPin(
-	lookupLock *workspaceLookupLock,
-	remote string,
-) (string, bool, error) {
-	if lookupLock == nil {
-		return "", false, nil
-	}
-
-	result, ok, err := lookupLock.lock.GetLookup(
-		lockCoreNamespace,
-		lockGitRefOperation,
-		[]any{remote, "HEAD"},
-	)
-	if err != nil {
-		return "", false, fmt.Errorf("read legacy HEAD lock entry: %w", err)
-	}
-	if !ok || result.Policy != workspace.PolicyPin {
-		return "", false, nil
-	}
-
-	legacyRef, err := workspace.ParseGitRefLockResult(result.Value)
-	if err != nil {
-		return "", false, fmt.Errorf("parse legacy HEAD lock entry: %w", err)
-	}
-	refName := legacyRef.Ref
-	if refName == "" {
-		refName = "HEAD"
-	}
-	pin, err := core.EncodeGitRefPin(&gitutil.Ref{
-		Name: refName,
-		SHA:  legacyRef.SHA,
-	})
-	if err != nil {
-		return "", false, fmt.Errorf("encode legacy HEAD lock entry: %w", err)
-	}
-	return pin, true, nil
-}
-
 func (s *gitSchema) latest(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
@@ -2156,10 +2115,23 @@ func (s *gitSchema) latest(
 	}
 
 	const lockPolicy = workspace.PolicyPin
-	lockInputs := []any{remoteRepo.URL.Remote(), args.IncludeSubreleases}
-	if args.TagPrefix != "" {
-		lockInputs = append(lockInputs, args.TagPrefix)
+	var lockOptions []workspace.LookupOption
+	if args.IncludeSubreleases {
+		lockOptions = append(lockOptions, workspace.LookupOption{
+			Name:  "includePrereleases",
+			Value: true,
+		})
 	}
+	if args.TagPrefix != "" {
+		lockOptions = append(lockOptions, workspace.LookupOption{
+			Name:  "tagPrefix",
+			Value: args.TagPrefix,
+		})
+	}
+	lockInputs := workspace.LookupInputs(
+		[]any{remoteRepo.URL.Remote()},
+		lockOptions...,
+	)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -2179,80 +2151,58 @@ func (s *gitSchema) latest(
 	if err != nil {
 		return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
 	}
-	pinValue := lockResolution.Pin
-	migrateLegacyHead := false
-	if pinValue == nil && !lockResolution.Found && !args.IncludeSubreleases {
-		legacyPin, ok, err := legacyGitLatestHeadPin(
-			lookupLock,
-			remoteRepo.URL.Remote(),
-		)
+	var selectedRef string
+	if lockResolution.Pin != nil {
+		var ok bool
+		selectedRef, ok = lockResolution.Pin.(string)
+		if !ok || selectedRef == "" {
+			return inst, fmt.Errorf(
+				"invalid %s lock value %v",
+				lockGitLatestOperation,
+				lockResolution.Pin,
+			)
+		}
+		if err := core.ValidateGitLatestRef(
+			selectedRef,
+			args.IncludeSubreleases,
+			args.TagPrefix,
+		); err != nil {
+			return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
+		}
+	} else {
+		remote, err := repo.LoadRemote(ctx)
 		if err != nil {
-			return inst, fmt.Errorf("%s lock migration: %w", lockGitLatestOperation, err)
+			return inst, err
 		}
-		if ok {
-			pinValue = legacyPin
-			migrateLegacyHead = true
-		}
-	}
-	if pinValue != nil {
-		pin, ok := pinValue.(string)
-		if !ok || pin == "" {
-			return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, pinValue)
-		}
-		ref, err := core.DecodeGitLatestRefPinWithTagPrefix(
-			pin,
+		ref, err := core.SelectLatestGitRefWithTagPrefix(
+			remote,
 			args.IncludeSubreleases,
 			args.TagPrefix,
 		)
 		if err != nil {
-			return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
+			return inst, err
 		}
-		if migrateLegacyHead && lockResolution.ShouldWrite {
+		selectedRef = ref.Name
+
+		if lockResolution.ShouldWrite && lookupLock != nil {
 			if err := lookupLock.SetLookup(
 				lockCoreNamespace,
 				lockGitLatestOperation,
 				lockInputs,
 				workspace.LookupResult{
-					Value:  pin,
+					Value:  selectedRef,
 					Policy: lockPolicy,
 				},
 			); err != nil {
-				return inst, fmt.Errorf("migrate lock entry for %s: %w", lockGitLatestOperation, err)
+				return inst, fmt.Errorf("set lock entry for %s: %w", lockGitLatestOperation, err)
 			}
 		}
-		return s.gitRefResult(ctx, parent, ref)
 	}
 
-	remote, err := repo.LoadRemote(ctx)
-	if err != nil {
-		return inst, err
-	}
-	ref, err := core.SelectLatestGitRefWithTagPrefix(
-		remote,
-		args.IncludeSubreleases,
-		args.TagPrefix,
-	)
-	if err != nil {
-		return inst, err
-	}
-
-	if lockResolution.ShouldWrite && lookupLock != nil {
-		pin, err := core.EncodeGitRefPin(ref)
-		if err != nil {
-			return inst, err
-		}
-		if err := lookupLock.SetLookup(
-			lockCoreNamespace,
-			lockGitLatestOperation,
-			lockInputs,
-			workspace.LookupResult{
-				Value:  pin,
-				Policy: lockPolicy,
-			},
-		); err != nil {
-			return inst, fmt.Errorf("set lock entry for %s: %w", lockGitLatestOperation, err)
-		}
-	}
-
-	return s.gitRefResult(ctx, parent, ref)
+	return s.ref(ctx, parent, refArgs{
+		Name:          selectedRef,
+		LockOperation: lockGitSHAOperation,
+		LockPolicy:    string(lockPolicy),
+		LockName:      selectedRef,
+	})
 }

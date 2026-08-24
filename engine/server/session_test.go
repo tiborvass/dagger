@@ -2155,7 +2155,7 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	t.Parallel()
 
 	legacy := workspace.NewLock()
-	require.NoError(t, legacy.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
+	require.NoError(t, legacy.SetLookup("", "oci-sha", []any{"alpine:latest"}, workspace.LookupResult{
 		Value:  "sha256:deadbeef",
 		Policy: workspace.PolicyPin,
 	}))
@@ -2175,7 +2175,7 @@ func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
 	}, ws)
 	require.NoError(t, err)
 
-	got, ok, err := lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	got, ok, err := lock.GetLookup("", "oci-sha", []any{"alpine:latest"})
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, got)

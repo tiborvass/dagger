@@ -144,12 +144,7 @@ func resolveLookupFromLoadedLock(
 
 	resolution.Found = true
 	resolution.Policy = lockResult.Policy
-	if resolution.Policy == workspace.PolicyPin {
-		resolution.Pin = lockResult.Value
-	} else {
-		// Version 1 float entries are refreshed once before the file migrates.
-		resolution.ShouldWrite = true
-	}
+	resolution.Pin = lockResult.Value
 	return resolution, nil
 }
 

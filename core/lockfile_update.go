@@ -2,8 +2,8 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	lockCoreNamespace          = ""
-	lockContainerFromOperation = "container.from"
-	lockGitLatestOperation     = "git.latest"
-	lockGitRefOperation        = "git.ref"
+	lockCoreNamespace      = ""
+	lockOCILatestOperation = "oci-latest"
+	lockOCISHAOperation    = "oci-sha"
+	lockGitLatestOperation = "git-latest"
+	lockGitSHAOperation    = "git-sha"
 )
 
 // UpdateWorkspaceLock refreshes the existing entries in a workspace lockfile in place.
@@ -28,7 +29,60 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 		return fmt.Errorf("read lock entries: %w", err)
 	}
 
+	var previousDependencies []workspace.LookupEntry
 	for _, entry := range entries {
+		if !isLatestLockEntry(entry) {
+			continue
+		}
+
+		oldDependency, err := latestDependencyEntry(entry, entry.Result)
+		if err != nil {
+			return err
+		}
+		if oldDependency != nil {
+			// A previous dependency may also be used by an explicit ref. The
+			// lockfile does not record ownership, so leave it unchanged and only
+			// skip refreshing it during this pass.
+			previousDependencies = append(previousDependencies, *oldDependency)
+		}
+
+		result, err := updateWorkspaceLockEntry(ctx, query, entry)
+		if err != nil {
+			return err
+		}
+		if err := lock.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, result); err != nil {
+			return fmt.Errorf("rewrite lock entry for %s %v: %w", entry.Operation, entry.Inputs, err)
+		}
+		dependency, err := latestDependencyEntry(entry, result)
+		if err != nil {
+			return err
+		}
+		if dependency == nil {
+			continue
+		}
+		dependencyResult, err := updateWorkspaceLockEntry(ctx, query, *dependency)
+		if err != nil {
+			return err
+		}
+		if err := lock.SetLookup(
+			dependency.Namespace,
+			dependency.Operation,
+			dependency.Inputs,
+			dependencyResult,
+		); err != nil {
+			return fmt.Errorf(
+				"write dependent lock entry for %s %v: %w",
+				dependency.Operation,
+				dependency.Inputs,
+				err,
+			)
+		}
+	}
+
+	for _, entry := range entries {
+		if isLatestLockEntry(entry) || containsLookup(previousDependencies, entry) {
+			continue
+		}
 		result, err := updateWorkspaceLockEntry(ctx, query, entry)
 		if err != nil {
 			return err
@@ -41,139 +95,195 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 	return nil
 }
 
+func isLatestLockEntry(entry workspace.LookupEntry) bool {
+	return entry.Namespace == lockCoreNamespace &&
+		(entry.Operation == lockGitLatestOperation ||
+			entry.Operation == lockOCILatestOperation)
+}
+
+func containsLookup(entries []workspace.LookupEntry, target workspace.LookupEntry) bool {
+	for _, entry := range entries {
+		if entry.Namespace == target.Namespace &&
+			entry.Operation == target.Operation &&
+			reflect.DeepEqual(entry.Inputs, target.Inputs) {
+			return true
+		}
+	}
+	return false
+}
+
+func latestDependencyEntry(
+	entry workspace.LookupEntry,
+	result workspace.LookupResult,
+) (*workspace.LookupEntry, error) {
+	value, ok := result.Value.(string)
+	if !ok || value == "" {
+		return nil, fmt.Errorf("invalid %s lock value %v", entry.Operation, result.Value)
+	}
+	required, options, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s inputs %v: %w", entry.Operation, entry.Inputs, err)
+	}
+
+	var operation string
+	var dependencyInputs []any
+	switch entry.Operation {
+	case lockGitLatestOperation:
+		if len(required) != 1 {
+			return nil, fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
+		}
+		operation = lockGitSHAOperation
+		dependencyInputs = []any{required[0], value}
+	case lockOCILatestOperation:
+		if len(required) != 1 {
+			return nil, fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
+		}
+		image, ok := required[0].(string)
+		if !ok || image == "" {
+			return nil, fmt.Errorf("invalid %s ref %v", entry.Operation, required[0])
+		}
+		ref, err := reference.ParseNormalizedNamed(image)
+		if err != nil {
+			return nil, fmt.Errorf("parse image address %q: %w", image, err)
+		}
+		ref, err = reference.WithTag(reference.TrimNamed(ref), value)
+		if err != nil {
+			return nil, fmt.Errorf("apply selected image tag %q: %w", value, err)
+		}
+		var shaOptions []workspace.LookupOption
+		for name, optionValue := range options {
+			if name == "includePrereleases" {
+				continue
+			}
+			shaOptions = append(shaOptions, workspace.LookupOption{
+				Name:  name,
+				Value: optionValue,
+			})
+		}
+		operation = lockOCISHAOperation
+		dependencyInputs = workspace.LookupInputs(
+			[]any{ref.String()},
+			shaOptions...,
+		)
+	default:
+		return nil, nil
+	}
+
+	return &workspace.LookupEntry{
+		Namespace: entry.Namespace,
+		Operation: operation,
+		Inputs:    dependencyInputs,
+		Result: workspace.LookupResult{
+			Value:  value,
+			Policy: workspace.PolicyPin,
+		},
+	}, nil
+}
+
 func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
 	switch {
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromOperation:
-		return updateContainerFromLockEntry(ctx, query, entry)
+	case entry.Namespace == lockCoreNamespace && entry.Operation == lockOCILatestOperation:
+		return updateOCILatestLockEntry(ctx, query, entry)
+	case entry.Namespace == lockCoreNamespace && entry.Operation == lockOCISHAOperation:
+		return updateOCISHALockEntry(ctx, query, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitLatestOperation:
 		return updateGitLatestLockEntry(ctx, entry)
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitRefOperation:
-		return updateGitRefLockEntry(ctx, entry)
+	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitSHAOperation:
+		return updateGitSHALockEntry(ctx, entry)
 	default:
 		return workspace.LookupResult{}, fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
 	}
 }
 
-type containerFromLockInputs struct {
-	ref                      string
-	latestRelease            bool
-	latestIncludeSubreleases bool
-	registryTransport        serverresolver.RegistryTransport
+type ociLockInputs struct {
+	ref                string
+	includePrereleases bool
+	registryTransport  serverresolver.RegistryTransport
 }
 
-func (inputs containerFromLockInputs) lockInputs() []any {
-	lockInputs := []any{inputs.ref}
-	if inputs.latestRelease {
-		lockInputs = append(lockInputs, inputs.latestIncludeSubreleases)
+func parseOCILockInputs(
+	operation string,
+	inputs []any,
+	latest bool,
+) (ociLockInputs, error) {
+	var parsed ociLockInputs
+	required, options, err := workspace.ParseLookupInputs(inputs)
+	if err != nil {
+		return parsed, fmt.Errorf("invalid %s inputs %v: %w", operation, inputs, err)
 	}
-	if inputs.registryTransport.Protocol != "" {
-		lockInputs = append(lockInputs, string(inputs.registryTransport.Protocol))
+	if len(required) != 1 {
+		return parsed, fmt.Errorf("invalid %s inputs %v", operation, inputs)
 	}
-	if inputs.registryTransport.InsecureSkipTLSVerify {
-		lockInputs = append(lockInputs, "insecureSkipTLSVerify")
-	}
-	return lockInputs
-}
-
-func parseContainerFromLockInputs(inputs []any) (containerFromLockInputs, error) {
-	var parsed containerFromLockInputs
-	if len(inputs) < 1 {
-		return parsed, fmt.Errorf("invalid %s inputs %v", lockContainerFromOperation, inputs)
-	}
-
-	ref, ok := inputs[0].(string)
+	ref, ok := required[0].(string)
 	if !ok || ref == "" {
-		return parsed, fmt.Errorf("invalid %s ref %v", lockContainerFromOperation, inputs[0])
+		return parsed, fmt.Errorf("invalid %s ref %v", operation, required[0])
+	}
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return parsed, fmt.Errorf("invalid %s ref %q: %w", operation, ref, err)
+	}
+	if latest && !reference.IsNameOnly(refName) {
+		return parsed, fmt.Errorf("invalid %s tagged ref %q", operation, ref)
+	}
+	if !latest {
+		if _, ok := refName.(reference.NamedTagged); !ok {
+			return parsed, fmt.Errorf("invalid %s untagged ref %q", operation, ref)
+		}
 	}
 	parsed.ref = ref
 
-	refName, err := reference.ParseNormalizedNamed(ref)
-	if err != nil {
-		return parsed, fmt.Errorf("invalid %s ref %q: %w", lockContainerFromOperation, ref, err)
-	}
-	parsed.latestRelease = reference.IsNameOnly(refName)
-
-	inputOffset := 1
-	minInputs, maxInputs := inputOffset, inputOffset+2
-	transportOffset := inputOffset
-	if parsed.latestRelease {
-		minInputs++
-		maxInputs++
-		transportOffset++
-	}
-	if len(inputs) < minInputs || len(inputs) > maxInputs {
-		return parsed, fmt.Errorf("invalid %s inputs %v", lockContainerFromOperation, inputs)
-	}
-
-	if parsed.latestRelease {
-		includeSubreleases, ok := inputs[inputOffset].(bool)
-		if !ok {
-			return parsed, fmt.Errorf(
-				"invalid %s latestIncludeSubreleases %v",
-				lockContainerFromOperation,
-				inputs[inputOffset],
-			)
-		}
-		parsed.latestIncludeSubreleases = includeSubreleases
-	}
-
-	if len(inputs) > transportOffset {
-		protocol, ok := inputs[transportOffset].(string)
-		if !ok {
-			return parsed, fmt.Errorf(
-				"invalid %s registry protocol %v",
-				lockContainerFromOperation,
-				inputs[transportOffset],
-			)
-		}
-		switch serverresolver.RegistryProtocol(protocol) {
-		case serverresolver.RegistryProtocolHTTP, serverresolver.RegistryProtocolHTTPS:
-			parsed.registryTransport.Protocol = serverresolver.RegistryProtocol(protocol)
+	for name, value := range options {
+		switch name {
+		case "includePrereleases":
+			if !latest {
+				return parsed, fmt.Errorf("invalid %s option %q", operation, name)
+			}
+			include, ok := value.(bool)
+			if !ok {
+				return parsed, fmt.Errorf("invalid %s includePrereleases %v", operation, value)
+			}
+			parsed.includePrereleases = include
+		case "protocol":
+			protocol, ok := value.(string)
+			if !ok {
+				return parsed, fmt.Errorf("invalid %s registry protocol %v", operation, value)
+			}
+			switch serverresolver.RegistryProtocol(protocol) {
+			case serverresolver.RegistryProtocolHTTP, serverresolver.RegistryProtocolHTTPS:
+				parsed.registryTransport.Protocol = serverresolver.RegistryProtocol(protocol)
+			default:
+				return parsed, fmt.Errorf("invalid %s registry protocol %q", operation, protocol)
+			}
+		case "insecureSkipTLSVerify":
+			insecure, ok := value.(bool)
+			if !ok {
+				return parsed, fmt.Errorf("invalid %s insecureSkipTLSVerify %v", operation, value)
+			}
+			parsed.registryTransport.InsecureSkipTLSVerify = insecure
 		default:
-			return parsed, fmt.Errorf("invalid %s registry protocol %q", lockContainerFromOperation, protocol)
+			return parsed, fmt.Errorf("invalid %s option %q", operation, name)
 		}
 	}
-
-	if len(inputs) == transportOffset+2 {
-		marker, ok := inputs[transportOffset+1].(string)
-		if !ok || marker != "insecureSkipTLSVerify" {
-			return parsed, fmt.Errorf(
-				"invalid %s registry transport option %v",
-				lockContainerFromOperation,
-				inputs[transportOffset+1],
-			)
+	if parsed.registryTransport.InsecureSkipTLSVerify {
+		if parsed.registryTransport.Protocol == serverresolver.RegistryProtocolHTTP {
+			return parsed, fmt.Errorf("invalid %s registry transport options", operation)
 		}
-		if parsed.registryTransport.Protocol != serverresolver.RegistryProtocolHTTPS {
-			return parsed, fmt.Errorf(
-				"invalid %s registry transport options %v",
-				lockContainerFromOperation,
-				inputs[transportOffset:],
-			)
+		if parsed.registryTransport.Protocol == "" {
+			parsed.registryTransport.Protocol = serverresolver.RegistryProtocolHTTPS
 		}
-		parsed.registryTransport.InsecureSkipTLSVerify = true
 	}
-
 	return parsed, nil
 }
 
-func updateContainerFromLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	inputs, err := parseContainerFromLockInputs(entry.Inputs)
+func updateOCILatestLockEntry(
+	ctx context.Context,
+	query *Query,
+	entry workspace.LookupEntry,
+) (workspace.LookupResult, error) {
+	inputs, err := parseOCILockInputs(lockOCILatestOperation, entry.Inputs, true)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
-
-	if !inputs.latestRelease {
-		resolvedDigest, err := resolveContainerFromDigest(ctx, query, inputs)
-		if err != nil {
-			return workspace.LookupResult{}, err
-		}
-
-		return workspace.LookupResult{
-			Value:  resolvedDigest.String(),
-			Policy: entry.Result.Policy,
-		}, nil
-	}
-
 	refName, err := reference.ParseNormalizedNamed(inputs.ref)
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("parse image address %q: %w", inputs.ref, err)
@@ -195,31 +305,32 @@ func updateContainerFromLockEntry(ctx context.Context, query *Query, entry works
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("list image tags for %q: %w", refName.String(), err)
 	}
-	refName, err = reference.WithTag(
-		refName,
-		SelectLatestContainerTag(tags, inputs.latestIncludeSubreleases),
-	)
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("select latest release for image %q: %w", inputs.ref, err)
-	}
-
-	inputs.ref = refName.String()
-	resolvedDigest, err := resolveContainerFromDigest(ctx, query, inputs)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	refName, err = reference.WithDigest(refName, resolvedDigest)
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("pin image %q: %w", inputs.ref, err)
-	}
-
 	return workspace.LookupResult{
-		Value:  refName.String(),
+		Value:  SelectLatestContainerTag(tags, inputs.includePrereleases),
 		Policy: workspace.PolicyPin,
 	}, nil
 }
 
-func resolveContainerFromDigest(ctx context.Context, query *Query, inputs containerFromLockInputs) (digest.Digest, error) {
+func updateOCISHALockEntry(
+	ctx context.Context,
+	query *Query,
+	entry workspace.LookupEntry,
+) (workspace.LookupResult, error) {
+	inputs, err := parseOCILockInputs(lockOCISHAOperation, entry.Inputs, false)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+	resolvedDigest, err := resolveOCIDigest(ctx, query, inputs)
+	if err != nil {
+		return workspace.LookupResult{}, err
+	}
+	return workspace.LookupResult{
+		Value:  resolvedDigest.String(),
+		Policy: entry.Result.Policy,
+	}, nil
+}
+
+func resolveOCIDigest(ctx context.Context, query *Query, inputs ociLockInputs) (digest.Digest, error) {
 	rslvr, err := query.RegistryResolver(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get registry resolver: %w", err)
@@ -241,12 +352,12 @@ func resolveContainerFromDigest(ctx context.Context, query *Query, inputs contai
 	return resolvedDigest, nil
 }
 
-func updateGitRefLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	remoteURL, name, err := parseGitLookupInputs("git.ref", entry.Inputs)
+func updateGitSHALockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
+	remoteURL, name, err := parseGitLookupInputs(lockGitSHAOperation, entry.Inputs)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
-	result, err := resolveGitRef(ctx, remoteURL, name)
+	result, err := resolveGitSHA(ctx, remoteURL, name)
 	if err != nil {
 		return workspace.LookupResult{}, err
 	}
@@ -254,82 +365,108 @@ func updateGitRefLockEntry(ctx context.Context, entry workspace.LookupEntry) (wo
 }
 
 func parseGitLookupInputs(operation string, inputs []any) (string, string, error) {
-	if len(inputs) != 2 {
+	required, options, err := workspace.ParseLookupInputs(inputs)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid %s inputs %v: %w", operation, inputs, err)
+	}
+	if len(required) != 2 || len(options) != 0 {
 		return "", "", fmt.Errorf("invalid %s inputs %v", operation, inputs)
 	}
-	remoteURL, ok := inputs[0].(string)
+	remoteURL, ok := required[0].(string)
 	if !ok || remoteURL == "" {
 		return "", "", fmt.Errorf("invalid %s remote %v", operation, inputs[0])
 	}
-	name, ok := inputs[1].(string)
+	name, ok := required[1].(string)
 	if !ok || name == "" {
 		return "", "", fmt.Errorf("invalid %s name %v", operation, inputs[1])
 	}
 	return remoteURL, name, nil
 }
 
-func resolveGitRef(ctx context.Context, remoteURL, name string) (workspace.GitRefLockResult, error) {
-	remote, err := loadRemoteGitMetadata(ctx, remoteURL)
-	if err != nil {
-		return workspace.GitRefLockResult{}, err
+func resolveGitSHA(ctx context.Context, remoteURL, name string) (string, error) {
+	if gitutil.IsCommitSHA(name) {
+		return name, nil
 	}
 
-	ref, err := remote.Lookup(name)
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return workspace.GitRefLockResult{}, fmt.Errorf("resolve git ref %q for %q: %w", name, remoteURL, err)
-	}
-	result := workspace.GitRefLockResult{SHA: ref.SHA}
-	if ref.Name != "" && !gitutil.IsCommitSHA(ref.Name) {
-		result.Ref = ref.Name
-	}
-	return result, nil
-}
-
-func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remote, error) {
-	candidates, err := gitutil.ParseCloneURL(remoteURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse git URL %q: %w", remoteURL, err)
+		return "", err
 	}
 
-	var lastErr error
-	for _, gitURL := range candidates {
-		repo := &RemoteGitRepository{URL: gitURL}
-		remote, err := repo.Remote(ctx)
-		if err != nil {
-			if errors.Is(err, gitutil.ErrGitAuthFailed) {
-				lastErr = err
-				continue
-			}
-			return nil, fmt.Errorf("load git remote %q: %w", remoteURL, err)
-		}
-		return remote, nil
+	var ref dagql.ObjectResult[*GitRef]
+	if err := srv.Select(ctx, srv.Root(), &ref,
+		dagql.Selector{
+			Field: "git",
+			Args: []dagql.NamedInput{
+				{Name: "url", Value: dagql.String(remoteURL)},
+			},
+		},
+		dagql.Selector{
+			Field: "ref",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(name)},
+			},
+		},
+	); err != nil {
+		return "", fmt.Errorf("resolve git ref %q for %q: %w", name, remoteURL, err)
 	}
-	return nil, fmt.Errorf("load git remote %q: %w", remoteURL, lastErr)
+	return ref.Self().Ref.SHA, nil
 }
 
 func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	if len(entry.Inputs) < 2 || len(entry.Inputs) > 3 {
-		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest inputs %v", entry.Inputs)
-	}
-	remoteURL, ok := entry.Inputs[0].(string)
-	if !ok || remoteURL == "" {
-		return workspace.LookupResult{}, fmt.Errorf("invalid git.latest remote %v", entry.Inputs[0])
-	}
-	includeSubreleases, ok := entry.Inputs[1].(bool)
-	if !ok {
+	required, options, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf(
-			"invalid git.latest includeSubreleases %v",
-			entry.Inputs[1],
+			"invalid %s inputs %v: %w",
+			lockGitLatestOperation,
+			entry.Inputs,
+			err,
 		)
 	}
+	if len(required) != 1 {
+		return workspace.LookupResult{}, fmt.Errorf(
+			"invalid %s inputs %v",
+			lockGitLatestOperation,
+			entry.Inputs,
+		)
+	}
+	remoteURL, ok := required[0].(string)
+	if !ok || remoteURL == "" {
+		return workspace.LookupResult{}, fmt.Errorf(
+			"invalid %s remote %v",
+			lockGitLatestOperation,
+			required[0],
+		)
+	}
+	var includePrereleases bool
 	var tagPrefix string
-	if len(entry.Inputs) == 3 {
-		var ok bool
-		tagPrefix, ok = entry.Inputs[2].(string)
-		if !ok || tagPrefix == "" {
+	for name, value := range options {
+		switch name {
+		case "includePrereleases":
+			var ok bool
+			includePrereleases, ok = value.(bool)
+			if !ok {
+				return workspace.LookupResult{}, fmt.Errorf(
+					"invalid %s includePrereleases %v",
+					lockGitLatestOperation,
+					value,
+				)
+			}
+		case "tagPrefix":
+			var ok bool
+			tagPrefix, ok = value.(string)
+			if !ok || tagPrefix == "" {
+				return workspace.LookupResult{}, fmt.Errorf(
+					"invalid %s tagPrefix %v",
+					lockGitLatestOperation,
+					value,
+				)
+			}
+		default:
 			return workspace.LookupResult{}, fmt.Errorf(
-				"invalid git.latest tag prefix %v",
-				entry.Inputs[2],
+				"invalid %s option %q",
+				lockGitLatestOperation,
+				name,
 			)
 		}
 	}
@@ -343,7 +480,7 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 	}
 
 	latestInputs := []dagql.NamedInput{
-		{Name: "includeSubreleases", Value: dagql.Boolean(includeSubreleases)},
+		{Name: "includeSubreleases", Value: dagql.Boolean(includePrereleases)},
 	}
 	if tagPrefix != "" {
 		latestInputs = append(latestInputs, dagql.NamedInput{
@@ -368,9 +505,6 @@ func updateGitLatestLockEntry(ctx context.Context, entry workspace.LookupEntry) 
 		return workspace.LookupResult{}, fmt.Errorf("resolve latest git release for %q: %w", remoteURL, err)
 	}
 
-	pin, err := EncodeGitRefPin(latest.Self().Ref)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-	return workspace.LookupResult{Value: pin, Policy: workspace.PolicyPin}, nil
+	selectedRef := latest.Self().Ref.Name
+	return workspace.LookupResult{Value: selectedRef, Policy: workspace.PolicyPin}, nil
 }
