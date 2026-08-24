@@ -2094,6 +2094,44 @@ type latestArgs struct {
 	TagPrefix          string `name:"tagPrefix" default:""`
 }
 
+func legacyGitLatestHeadPin(
+	lookupLock *workspaceLookupLock,
+	remote string,
+) (string, bool, error) {
+	if lookupLock == nil {
+		return "", false, nil
+	}
+
+	result, ok, err := lookupLock.lock.GetLookup(
+		lockCoreNamespace,
+		lockGitRefOperation,
+		[]any{remote, "HEAD"},
+	)
+	if err != nil {
+		return "", false, fmt.Errorf("read legacy HEAD lock entry: %w", err)
+	}
+	if !ok || result.Policy != workspace.PolicyPin {
+		return "", false, nil
+	}
+
+	legacyRef, err := workspace.ParseGitRefLockResult(result.Value)
+	if err != nil {
+		return "", false, fmt.Errorf("parse legacy HEAD lock entry: %w", err)
+	}
+	refName := legacyRef.Ref
+	if refName == "" {
+		refName = "HEAD"
+	}
+	pin, err := core.EncodeGitRefPin(&gitutil.Ref{
+		Name: refName,
+		SHA:  legacyRef.SHA,
+	})
+	if err != nil {
+		return "", false, fmt.Errorf("encode legacy HEAD lock entry: %w", err)
+	}
+	return pin, true, nil
+}
+
 func (s *gitSchema) latest(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.GitRepository],
@@ -2141,10 +2179,25 @@ func (s *gitSchema) latest(
 	if err != nil {
 		return inst, fmt.Errorf("%s lock resolution: %w", lockGitLatestOperation, err)
 	}
-	if lockResolution.Pin != nil {
-		pin, ok := lockResolution.Pin.(string)
+	pinValue := lockResolution.Pin
+	migrateLegacyHead := false
+	if pinValue == nil && !lockResolution.Found && !args.IncludeSubreleases {
+		legacyPin, ok, err := legacyGitLatestHeadPin(
+			lookupLock,
+			remoteRepo.URL.Remote(),
+		)
+		if err != nil {
+			return inst, fmt.Errorf("%s lock migration: %w", lockGitLatestOperation, err)
+		}
+		if ok {
+			pinValue = legacyPin
+			migrateLegacyHead = true
+		}
+	}
+	if pinValue != nil {
+		pin, ok := pinValue.(string)
 		if !ok || pin == "" {
-			return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, lockResolution.Pin)
+			return inst, fmt.Errorf("invalid %s lock value %v", lockGitLatestOperation, pinValue)
 		}
 		ref, err := core.DecodeGitLatestRefPinWithTagPrefix(
 			pin,
@@ -2153,6 +2206,19 @@ func (s *gitSchema) latest(
 		)
 		if err != nil {
 			return inst, fmt.Errorf("%s lock value: %w", lockGitLatestOperation, err)
+		}
+		if migrateLegacyHead && lockResolution.ShouldWrite {
+			if err := lookupLock.SetLookup(
+				lockCoreNamespace,
+				lockGitLatestOperation,
+				lockInputs,
+				workspace.LookupResult{
+					Value:  pin,
+					Policy: lockPolicy,
+				},
+			); err != nil {
+				return inst, fmt.Errorf("migrate lock entry for %s: %w", lockGitLatestOperation, err)
+			}
 		}
 		return s.gitRefResult(ctx, parent, ref)
 	}

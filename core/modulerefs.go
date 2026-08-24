@@ -19,6 +19,8 @@ import (
 // match any tag in its Git repository.
 var ErrModuleVersionNotFound = errors.New("module version not found")
 
+const moduleLatestReleaseVersion = "v1.0.0-beta.10"
+
 // FastModuleSourceKindCheck performs a quick heuristic check to determine
 // whether a module ref string refers to a local path or a git source.
 // Returns "" if the kind cannot be determined without further inspection.
@@ -177,13 +179,7 @@ func (p *ParsedGitRefString) GitRef(
 	}
 	repoSelector = withCommitArg(repoSelector)
 
-	refSelector := dagql.Selector{Field: "latest"}
-	if p.RepoRootSubdir != "/" {
-		refSelector.Args = append(refSelector.Args, dagql.NamedInput{
-			Name:  "tagPrefix",
-			Value: dagql.String(strings.Trim(p.RepoRootSubdir, "/")),
-		})
-	}
+	refSelector := moduleGitDefaultRefSelector(ctx, p)
 	switch {
 	case modTag != "":
 		refSelector = withCommitArg(dagql.Selector{
@@ -217,6 +213,24 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	return gitRef, nil
+}
+
+func moduleGitDefaultRefSelector(
+	ctx context.Context,
+	p *ParsedGitRefString,
+) dagql.Selector {
+	if !Supports(ctx, moduleLatestReleaseVersion) {
+		return dagql.Selector{Field: "head"}
+	}
+
+	selector := dagql.Selector{Field: "latest"}
+	if p.RepoRootSubdir != "/" {
+		selector.Args = append(selector.Args, dagql.NamedInput{
+			Name:  "tagPrefix",
+			Value: dagql.String(strings.Trim(p.RepoRootSubdir, "/")),
+		})
+	}
+	return selector
 }
 
 // Match a version string in a list of versions with optional subPath

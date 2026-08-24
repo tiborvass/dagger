@@ -545,6 +545,79 @@ func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
 	require.Contains(t, string(out), lockTestGitTagOldCommit)
 }
 
+func (LockfileSuite) TestGitLatestMigratesLegacyHeadPin(ctx context.Context, t *testctx.T) {
+	const (
+		unavailableRemote = "git://example.invalid/dagger.git"
+		pinnedRef         = "refs/heads/main"
+		pinnedCommit      = "0123456789abcdef0123456789abcdef01234567"
+	)
+
+	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
+	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", `{
+  git(url: "`+unavailableRemote+`") {
+    latest {
+      ref
+      commit
+    }
+  }
+}
+`)
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		"",
+		"git.ref",
+		[]any{unavailableRemote, "HEAD"},
+		workspace.LookupResult{
+			Value: workspace.GitRefLockResult{
+				SHA: pinnedCommit,
+				Ref: pinnedRef,
+			},
+			Policy: workspace.PolicyPin,
+		},
+	))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+	lockPath := filepath.Join(workdir, workspace.LockFileName)
+	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
+
+	out, err := hostDaggerExec(
+		ctx,
+		t,
+		workdir,
+		"--silent",
+		"query",
+		"--doc",
+		queryPath,
+	)
+	require.NoError(t, err)
+	require.Contains(t, string(out), pinnedRef)
+	require.Contains(t, string(out), pinnedCommit)
+
+	lockBytes, err = os.ReadFile(lockPath)
+	require.NoError(t, err)
+	lock, err = workspace.ParseLock(lockBytes)
+	require.NoError(t, err)
+	latest, ok, err := lock.GetLookup(
+		"",
+		"git.latest",
+		[]any{unavailableRemote, false},
+	)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, pinnedRef+"@"+pinnedCommit, latest.Value)
+
+	_, ok, err = lock.GetLookup(
+		"",
+		"git.ref",
+		[]any{unavailableRemote, "HEAD"},
+	)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
 func (LockfileSuite) TestGitLatestPinnedDoesNotLoadRemoteMetadata(ctx context.Context, t *testctx.T) {
 	const unavailableRemote = "git://example.invalid/dagger.git"
 	const pinnedCommit = "0123456789abcdef0123456789abcdef01234567"
