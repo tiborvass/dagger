@@ -70,7 +70,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("address").Doc(
 					`Address of the container image to download, in standard OCI ref format. Example: "registry.dagger.io/engine:latest".`,
-					`Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable semantic-version tag, falling back to the literal "latest" tag when no eligible release exists. Specify ":latest" explicitly to request the registry's literal "latest" tag.`,
+					`Starting with API v1.0.0-beta.10, an address without a tag or digest selects the greatest stable release tag, falling back to the literal "latest" tag when no eligible release exists. Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. Specify ":latest" explicitly to request the registry's literal "latest" tag.`,
 				),
 				dagql.Arg("registryService").Doc(
 					`Service to use as the registry endpoint for the image address.`,
@@ -1346,10 +1346,13 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			if err != nil {
 				return inst, fmt.Errorf("failed to list image tags for %q: %w", refName.String(), err)
 			}
-			selectedTag = core.SelectLatestContainerTag(
+			selectedTag, err = core.SelectLatestContainerTag(
 				tags,
 				args.LatestIncludeSubreleases,
 			)
+			if err != nil {
+				return inst, fmt.Errorf("select latest image tag for %q: %w", refName.String(), err)
+			}
 			if latestResolution.ShouldWrite && lookupLock != nil {
 				if err := lookupLock.SetLookup(
 					lockCoreNamespace,

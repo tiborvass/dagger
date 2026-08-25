@@ -83,13 +83,14 @@ type GitRefBackend interface {
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
 
-// SelectLatestGitRef selects the greatest semantic-version tag in remote,
-// falling back to HEAD when the remote has no eligible release tags.
+// SelectLatestGitRef selects the greatest release tag in remote after
+// normalizing optional v prefixes, incomplete versions, and zero-padded numeric
+// components. It falls back to HEAD when no eligible release tag exists.
 func SelectLatestGitRef(remote *gitutil.Remote, includeSubreleases bool) (*gitutil.Ref, error) {
 	return SelectLatestGitRefWithTagPrefix(remote, includeSubreleases, "")
 }
 
-// SelectLatestGitRefWithTagPrefix selects the greatest semantic-version tag
+// SelectLatestGitRefWithTagPrefix selects the greatest normalized release tag
 // below tagPrefix. If no matching prefixed release exists, repository-wide
 // release tags are considered before falling back to HEAD.
 func SelectLatestGitRefWithTagPrefix(
@@ -106,9 +107,15 @@ func SelectLatestGitRefWithTagPrefix(
 		tagPrefix += "/"
 	}
 
-	bestRef := selectLatestGitRelease(remote, includeSubreleases, tagPrefix)
+	bestRef, err := selectLatestGitRelease(remote, includeSubreleases, tagPrefix)
+	if err != nil {
+		return nil, err
+	}
 	if bestRef == "" && tagPrefix != "" {
-		bestRef = selectLatestGitRelease(remote, includeSubreleases, "")
+		bestRef, err = selectLatestGitRelease(remote, includeSubreleases, "")
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if bestRef == "" {
@@ -130,11 +137,9 @@ func selectLatestGitRelease(
 	remote *gitutil.Remote,
 	includeSubreleases bool,
 	tagPrefix string,
-) string {
-	var (
-		bestRef     string
-		bestVersion string
-	)
+) (string, error) {
+	candidates := make([]releaseTagCandidate, 0, len(remote.Tags().Refs))
+	refs := map[string]string{}
 	for _, ref := range remote.Tags().Refs {
 		version := ref.ShortName()
 		if tagPrefix != "" {
@@ -144,23 +149,25 @@ func selectLatestGitRelease(
 				continue
 			}
 		}
-		if !strings.HasPrefix(version, "v") {
-			version = "v" + version
-		}
-		if !semver.IsValid(version) {
-			continue
-		}
-		if !includeSubreleases && semver.Prerelease(version) != "" {
-			continue
-		}
-
-		comparison := semver.Compare(version, bestVersion)
-		if bestRef == "" || comparison > 0 || (comparison == 0 && ref.Name > bestRef) {
-			bestRef = ref.Name
-			bestVersion = version
-		}
+		original := ref.ShortName()
+		candidates = append(candidates, releaseTagCandidate{
+			Original: original,
+			Version:  version,
+		})
+		refs[original] = ref.Name
 	}
-	return bestRef
+	selected, found, err := selectLatestReleaseTag(
+		candidates,
+		includeSubreleases,
+		releaseTagTieStrict,
+	)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", nil
+	}
+	return refs[selected.Original], nil
 }
 
 // ValidateGitLatestRef validates a ref selected by git-latest.
@@ -171,13 +178,11 @@ func ValidateGitLatestRef(refName string, includePrereleases bool, tagPrefix str
 		if tagPrefix != "" {
 			version, _ = strings.CutPrefix(version, tagPrefix+"/")
 		}
-		if !strings.HasPrefix(version, "v") {
-			version = "v" + version
-		}
-		if !semver.IsValid(version) {
+		normalized, ok := normalizeReleaseTag(tag, version)
+		if !ok {
 			return fmt.Errorf("invalid git-latest tag %q: not a semantic version", tag)
 		}
-		if !includePrereleases && semver.Prerelease(version) != "" {
+		if !includePrereleases && semver.Prerelease(normalized.Normalized) != "" {
 			return fmt.Errorf("invalid git-latest tag %q: prerelease tags are not supported", tag)
 		}
 		return nil

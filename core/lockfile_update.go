@@ -302,8 +302,12 @@ func updateOCILatestLockEntry(
 	if err != nil {
 		return workspace.LookupResult{}, fmt.Errorf("list image tags for %q: %w", refName.String(), err)
 	}
+	selectedTag, err := SelectLatestContainerTag(tags, inputs.includePrereleases)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("select latest image tag for %q: %w", refName.String(), err)
+	}
 	return workspace.LookupResult{
-		Value:  SelectLatestContainerTag(tags, inputs.includePrereleases),
+		Value:  selectedTag,
 		Policy: workspace.PolicyPin,
 	}, nil
 }

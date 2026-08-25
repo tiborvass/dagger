@@ -114,7 +114,10 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`Returns details for the latest semver tag.`),
 		dagql.NodeFunc("latest", s.latest).
 			View(AfterVersion("v1.0.0-beta.10")).
-			Doc(`Return the latest release tag, falling back to HEAD when no release exists.`, `This operation is pinned.`).
+			Doc(
+				`Return the latest release tag, falling back to HEAD when no release exists.`,
+				`Release selection accepts an optional "v" prefix, incomplete versions, and zero-padded numeric components. This operation is pinned.`,
+			).
 			Args(
 				dagql.Arg("includeSubreleases").Doc(`Include prerelease tags when selecting the latest release.`),
 				dagql.Arg("tagPrefix").

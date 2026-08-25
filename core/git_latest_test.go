@@ -133,26 +133,64 @@ func TestSelectLatestGitRefIncludesSubreleases(t *testing.T) {
 	require.Equal(t, betaCommit, ref.SHA)
 }
 
-func TestSelectLatestGitRefEquivalentVersionsDeterministic(t *testing.T) {
+func TestSelectLatestGitRefRejectsEquivalentVersions(t *testing.T) {
 	t.Parallel()
 
-	const commit = "0123456789abcdef0123456789abcdef01234567"
-	for _, refs := range [][]*gitutil.Ref{
+	for _, tc := range []struct {
+		name string
+		refs []*gitutil.Ref
+	}{
 		{
-			{Name: "refs/tags/1.2.3", SHA: "1111111111111111111111111111111111111111"},
-			{Name: "refs/tags/v1.2.3", SHA: commit},
+			name: "optional v prefix",
+			refs: []*gitutil.Ref{
+				{Name: "refs/tags/1.2.3", SHA: "1111111111111111111111111111111111111111"},
+				{Name: "refs/tags/v1.2.3", SHA: "2222222222222222222222222222222222222222"},
+			},
 		},
 		{
-			{Name: "refs/tags/v1.2.3", SHA: commit},
-			{Name: "refs/tags/1.2.3", SHA: "1111111111111111111111111111111111111111"},
+			name: "incomplete version",
+			refs: []*gitutil.Ref{
+				{Name: "refs/tags/v1.2", SHA: "1111111111111111111111111111111111111111"},
+				{Name: "refs/tags/v1.2.0", SHA: "2222222222222222222222222222222222222222"},
+			},
+		},
+		{
+			name: "calver and semver",
+			refs: []*gitutil.Ref{
+				{Name: "refs/tags/24.04", SHA: "1111111111111111111111111111111111111111"},
+				{Name: "refs/tags/24.4.0", SHA: "2222222222222222222222222222222222222222"},
+			},
+		},
+		{
+			name: "zero-padded version",
+			refs: []*gitutil.Ref{
+				{Name: "refs/tags/01.002.0003", SHA: "1111111111111111111111111111111111111111"},
+				{Name: "refs/tags/1.2.3", SHA: "2222222222222222222222222222222222222222"},
+			},
 		},
 	} {
-		remote := &gitutil.Remote{Refs: refs}
-		ref, err := SelectLatestGitRef(remote, false)
-		require.NoError(t, err)
-		require.Equal(t, "refs/tags/v1.2.3", ref.Name)
-		require.Equal(t, commit, ref.SHA)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			remote := &gitutil.Remote{Refs: tc.refs}
+			_, err := SelectLatestGitRef(remote, false)
+			require.ErrorContains(t, err, "ambiguous latest release")
+		})
 	}
+}
+
+func TestSelectLatestGitRefAcceptsCalver(t *testing.T) {
+	t.Parallel()
+
+	const latestCommit = "2222222222222222222222222222222222222222"
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/tags/24.04", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/tags/25.10", SHA: latestCommit},
+	}}
+
+	ref, err := SelectLatestGitRef(remote, false)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/25.10", ref.Name)
+	require.Equal(t, latestCommit, ref.SHA)
 }
 
 func TestValidateGitLatestRef(t *testing.T) {
@@ -166,6 +204,8 @@ func TestValidateGitLatestRef(t *testing.T) {
 	}{
 		{name: "stable tag", ref: "refs/tags/v1.2.3"},
 		{name: "stable tag without v", ref: "refs/tags/1.2.3"},
+		{name: "incomplete tag", ref: "refs/tags/v1.2"},
+		{name: "calver tag", ref: "refs/tags/24.04"},
 		{name: "uncanonicalized head", ref: "HEAD", wantErr: "invalid git-latest ref"},
 		{name: "default branch", ref: "refs/heads/main"},
 		{name: "non-semver tag", ref: "refs/tags/latest", wantErr: "not a semantic version"},
