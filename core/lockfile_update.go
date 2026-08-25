@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
@@ -52,6 +54,22 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 		}
 		if containsLockEntry(refreshedEntries, *selectedEntry) {
 			continue
+		}
+		previousResult, found, err := lock.GetLookup(
+			selectedEntry.Namespace,
+			selectedEntry.Operation,
+			selectedEntry.Inputs,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"read selected SHA entry for %s %v: %w",
+				selectedEntry.Operation,
+				selectedEntry.Inputs,
+				err,
+			)
+		}
+		if found {
+			selectedEntry.Result = previousResult
 		}
 		selectedResult, err := updateWorkspaceLockEntry(ctx, query, *selectedEntry)
 		if err != nil {
@@ -361,6 +379,17 @@ func updateGitSHALockEntry(ctx context.Context, entry workspace.LookupEntry) (wo
 	result, err := resolveGitSHA(ctx, remoteURL, name)
 	if err != nil {
 		return workspace.LookupResult{}, err
+	}
+	if oldSHA, ok := entry.Result.Value.(string); ok &&
+		strings.HasPrefix(name, "refs/tags/") &&
+		gitutil.IsCommitSHA(oldSHA) && oldSHA != result {
+		slog.SpanLogger(ctx, InstrumentationLibrary).Warn(
+			"git tag points to a different commit",
+			"repository", remoteURL,
+			"tag", strings.TrimPrefix(name, "refs/tags/"),
+			"oldCommit", oldSHA,
+			"newCommit", result,
+		)
 	}
 	return workspace.LookupResult{Value: result, Policy: entry.Result.Policy}, nil
 }

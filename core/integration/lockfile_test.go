@@ -636,9 +636,10 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 		"refs/tags/"+lockTestGitTagName+"@"+staleCommit,
 	)
 
-	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "--progress=plain", "update")
 	require.NoError(t, err)
-	require.Equal(t, "Updated dagger.lock", strings.TrimSpace(string(out)))
+	require.Contains(t, string(out), "git tag points to a different commit")
+	require.Contains(t, string(out), "Updated dagger.lock")
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
