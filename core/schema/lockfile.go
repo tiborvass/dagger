@@ -19,13 +19,15 @@ const (
 )
 
 type workspaceLookupLock struct {
-	ctx   context.Context
-	query *core.Query
-	lock  *workspace.Lock
+	ctx     context.Context
+	query   *core.Query
+	lock    *workspace.Lock
+	refresh bool
 }
 
 type workspaceLookupLockOverrideKey struct{}
 type workspaceLookupLockDisabledKey struct{}
+type workspaceLookupLockRefreshKey struct{}
 
 func withoutWorkspaceLookupLock(ctx context.Context) context.Context {
 	ctx = context.WithValue(ctx, workspaceLookupLockDisabledKey{}, true)
@@ -37,6 +39,16 @@ func workspaceLookupLockDisabled(ctx context.Context) bool {
 	return disabled
 }
 
+func withWorkspaceLookupLockRefresh(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, workspaceLookupLockRefreshKey{}, true)
+	return dagql.WithPerClientCacheScope(ctx)
+}
+
+func workspaceLookupLockRefresh(ctx context.Context) bool {
+	refresh, _ := ctx.Value(workspaceLookupLockRefreshKey{}).(bool)
+	return refresh
+}
+
 func withWorkspaceLookupLockOverride(ctx context.Context, lock *workspace.Lock) context.Context {
 	ctx = context.WithValue(ctx, workspaceLookupLockOverrideKey{}, lock)
 	return dagql.WithPerClientCacheScope(ctx)
@@ -44,7 +56,10 @@ func withWorkspaceLookupLockOverride(ctx context.Context, lock *workspace.Lock) 
 
 func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspaceLookupLock, error) {
 	if lock, ok := ctx.Value(workspaceLookupLockOverrideKey{}).(*workspace.Lock); ok && lock != nil {
-		return &workspaceLookupLock{lock: lock}, nil
+		return &workspaceLookupLock{
+			lock:    lock,
+			refresh: workspaceLookupLockRefresh(ctx),
+		}, nil
 	}
 
 	lock, ok, err := query.CurrentWorkspaceLock(ctx, true)
@@ -56,9 +71,10 @@ func loadWorkspaceLookupLock(ctx context.Context, query *core.Query) (*workspace
 	}
 
 	return &workspaceLookupLock{
-		ctx:   ctx,
-		query: query,
-		lock:  lock,
+		ctx:     ctx,
+		query:   query,
+		lock:    lock,
+		refresh: workspaceLookupLockRefresh(ctx),
 	}, nil
 }
 
@@ -111,6 +127,9 @@ func resolveLookupFromLoadedLock(
 		Policy: requestedPolicy,
 	}
 	if lookupLock == nil {
+		return resolution, nil
+	}
+	if lookupLock.refresh {
 		return resolution, nil
 	}
 
