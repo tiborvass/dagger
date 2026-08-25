@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -29,21 +30,10 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 		return fmt.Errorf("read lock entries: %w", err)
 	}
 
-	var previousDependencies []workspace.LookupEntry
+	var refreshedEntries []workspace.LookupEntry
 	for _, entry := range entries {
 		if !isLatestLockEntry(entry) {
 			continue
-		}
-
-		oldDependency, err := latestDependencyEntry(entry, entry.Result)
-		if err != nil {
-			return err
-		}
-		if oldDependency != nil {
-			// A previous dependency may also be used by an explicit ref. The
-			// lockfile does not record ownership, so leave it unchanged and only
-			// skip refreshing it during this pass.
-			previousDependencies = append(previousDependencies, *oldDependency)
 		}
 
 		result, err := updateWorkspaceLockEntry(ctx, query, entry)
@@ -53,34 +43,38 @@ func UpdateWorkspaceLock(ctx context.Context, query *Query, lock *workspace.Lock
 		if err := lock.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, result); err != nil {
 			return fmt.Errorf("rewrite lock entry for %s %v: %w", entry.Operation, entry.Inputs, err)
 		}
-		dependency, err := latestDependencyEntry(entry, result)
+		selectedEntry, err := selectedSHAEntry(entry, result)
 		if err != nil {
 			return err
 		}
-		if dependency == nil {
+		if selectedEntry == nil {
 			continue
 		}
-		dependencyResult, err := updateWorkspaceLockEntry(ctx, query, *dependency)
+		if containsLockEntry(refreshedEntries, *selectedEntry) {
+			continue
+		}
+		selectedResult, err := updateWorkspaceLockEntry(ctx, query, *selectedEntry)
 		if err != nil {
 			return err
 		}
 		if err := lock.SetLookup(
-			dependency.Namespace,
-			dependency.Operation,
-			dependency.Inputs,
-			dependencyResult,
+			selectedEntry.Namespace,
+			selectedEntry.Operation,
+			selectedEntry.Inputs,
+			selectedResult,
 		); err != nil {
 			return fmt.Errorf(
-				"write dependent lock entry for %s %v: %w",
-				dependency.Operation,
-				dependency.Inputs,
+				"write selected SHA entry for %s %v: %w",
+				selectedEntry.Operation,
+				selectedEntry.Inputs,
 				err,
 			)
 		}
+		refreshedEntries = append(refreshedEntries, *selectedEntry)
 	}
 
 	for _, entry := range entries {
-		if isLatestLockEntry(entry) || containsLookup(previousDependencies, entry) {
+		if isLatestLockEntry(entry) || containsLockEntry(refreshedEntries, entry) {
 			continue
 		}
 		result, err := updateWorkspaceLockEntry(ctx, query, entry)
@@ -101,7 +95,7 @@ func isLatestLockEntry(entry workspace.LookupEntry) bool {
 			entry.Operation == lockOCILatestOperation)
 }
 
-func containsLookup(entries []workspace.LookupEntry, target workspace.LookupEntry) bool {
+func containsLockEntry(entries []workspace.LookupEntry, target workspace.LookupEntry) bool {
 	for _, entry := range entries {
 		if entry.Namespace == target.Namespace &&
 			entry.Operation == target.Operation &&
@@ -112,7 +106,7 @@ func containsLookup(entries []workspace.LookupEntry, target workspace.LookupEntr
 	return false
 }
 
-func latestDependencyEntry(
+func selectedSHAEntry(
 	entry workspace.LookupEntry,
 	result workspace.LookupResult,
 ) (*workspace.LookupEntry, error) {
@@ -126,14 +120,14 @@ func latestDependencyEntry(
 	}
 
 	var operation string
-	var dependencyInputs []any
+	var selectedInputs []any
 	switch entry.Operation {
 	case lockGitLatestOperation:
 		if len(required) != 1 {
 			return nil, fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
 		}
 		operation = lockGitSHAOperation
-		dependencyInputs = []any{required[0], value}
+		selectedInputs = []any{required[0], value}
 	case lockOCILatestOperation:
 		if len(required) != 1 {
 			return nil, fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
@@ -160,8 +154,11 @@ func latestDependencyEntry(
 				Value: optionValue,
 			})
 		}
+		sort.Slice(shaOptions, func(i, j int) bool {
+			return shaOptions[i].Name < shaOptions[j].Name
+		})
 		operation = lockOCISHAOperation
-		dependencyInputs = workspace.LookupInputs(
+		selectedInputs = workspace.LookupInputs(
 			[]any{ref.String()},
 			shaOptions...,
 		)
@@ -172,7 +169,7 @@ func latestDependencyEntry(
 	return &workspace.LookupEntry{
 		Namespace: entry.Namespace,
 		Operation: operation,
-		Inputs:    dependencyInputs,
+		Inputs:    selectedInputs,
 		Result: workspace.LookupResult{
 			Value:  value,
 			Policy: workspace.PolicyPin,

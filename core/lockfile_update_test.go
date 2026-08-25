@@ -20,13 +20,13 @@ func TestUpdateWorkspaceLockEntry(t *testing.T) {
 	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
 }
 
-func TestLatestDependencyEntry(t *testing.T) {
+func TestSelectedSHAEntry(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Git", func(t *testing.T) {
 		t.Parallel()
 
-		entry, err := latestDependencyEntry(
+		entry, err := selectedSHAEntry(
 			workspace.LookupEntry{
 				Operation: lockGitLatestOperation,
 				Inputs: workspace.LookupInputs(
@@ -47,7 +47,7 @@ func TestLatestDependencyEntry(t *testing.T) {
 	t.Run("OCI", func(t *testing.T) {
 		t.Parallel()
 
-		entry, err := latestDependencyEntry(
+		entry, err := selectedSHAEntry(
 			workspace.LookupEntry{
 				Operation: lockOCILatestOperation,
 				Inputs: workspace.LookupInputs(

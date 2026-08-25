@@ -47,7 +47,8 @@ const (
 	lockTestGitBranchName   = "main"
 	lockTestGitBranchCommit = "c80ac2c13df7d573a069938e01ca13f7a81f0345"
 	lockTestGitTagName      = "v0.18.2"
-	lockTestGitTagOldCommit = "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb"
+	lockTestGitTagCommit    = "0b46ea3c49b5d67509f67747742e5d8b24be9ef7"
+	lockTestGitStaleCommit  = "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb"
 )
 
 const gitBranchAndTagCommitQuery = `{
@@ -474,12 +475,12 @@ func (LockfileSuite) TestGitLatestUsesPin(ctx context.Context, t *testctx.T) {
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-latest.graphql", gitLatestCommitQuery)
-	writeGitLatestLock(t, workdir, "refs/tags/"+lockTestGitTagName+"@"+lockTestGitTagOldCommit)
+	writeGitLatestLock(t, workdir, "refs/tags/"+lockTestGitTagName+"@"+lockTestGitStaleCommit)
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.Contains(t, string(out), "refs/tags/"+lockTestGitTagName)
-	require.Contains(t, string(out), lockTestGitTagOldCommit)
+	require.Contains(t, string(out), lockTestGitStaleCommit)
 }
 
 func (LockfileSuite) TestGitLatestPinnedDoesNotLoadRemoteMetadata(ctx context.Context, t *testctx.T) {
@@ -592,7 +593,7 @@ func (LockfileSuite) TestGitLatestPinnedRejectsInvalidRef(ctx context.Context, t
 // credential-helper access that created the pin.
 func (LockfileSuite) TestUpdateRefreshesPrivateGitLatestEntry(ctx context.Context, t *testctx.T) {
 	const privateRepoURL = "https://github.com/grouville/daggerverse-private.git"
-	stalePin := "refs/tags/v0.0.1@" + strings.Repeat("0", 40)
+	stalePin := "refs/heads/main@" + strings.Repeat("0", 40)
 
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
@@ -628,7 +629,12 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 	workdir := t.TempDir()
 	hostGitInit(t, workdir)
 	writeEmptyWorkspaceConfig(t, workdir)
-	lockPath, originalLock := writeGitLatestLock(t, workdir, "refs/tags/"+lockTestGitTagName+"@"+lockTestGitTagOldCommit)
+	staleCommit := strings.Repeat("0", 40)
+	lockPath, originalLock := writeGitLatestLock(
+		t,
+		workdir,
+		"refs/tags/"+lockTestGitTagName+"@"+staleCommit,
+	)
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
@@ -638,7 +644,11 @@ func (LockfileSuite) TestUpdateRefreshesExistingGitLatestEntry(ctx context.Conte
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
 	assertGitLatestLockEntry(t, lockBytes)
-	require.NotContains(t, string(lockBytes), lockTestGitTagOldCommit)
+	assertGitLockEntryResult(t, lockBytes, []any{
+		lockTestGitRepoURL,
+		"refs/tags/" + lockTestGitTagName,
+	}, lockTestGitTagCommit)
+	require.NotContains(t, string(lockBytes), staleCommit)
 }
 
 func writeGitLatestLock(t *testctx.T, workdir, pin string) (string, string) {
@@ -675,6 +685,31 @@ func writeGitLatestLockForRemote(
 	lockPath := filepath.Join(workdir, workspace.LockFileName)
 	require.NoError(t, os.WriteFile(lockPath, lockBytes, 0o600))
 	return lockPath, string(lockBytes)
+}
+
+func assertGitLockEntryResult(
+	t *testctx.T,
+	lockBytes []byte,
+	expectedInputs []any,
+	expectedResult string,
+) {
+	t.Helper()
+
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "git-sha" {
+			continue
+		}
+		if !equalLockInputs(entry.Inputs, expectedInputs) {
+			continue
+		}
+		result, ok := entry.Value.(string)
+		require.True(t, ok)
+		require.Equal(t, expectedResult, result)
+		return
+	}
+	require.FailNow(t, "expected git-sha entry")
 }
 
 func assertGitLatestLockEntry(t *testctx.T, lockBytes []byte) {
@@ -730,8 +765,11 @@ func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t
 	require.NoError(t, err)
 	require.Equal(t, lockBytes, pinnedLockBytes)
 
-	stalePin := "docker.io/library/alpine:1.0.0@sha256:" + strings.Repeat("0", 64)
-	writeContainerFromLatestLock(t, workdir, stalePin)
+	staleSelectedRef := "docker.io/library/alpine:3.20"
+	staleSelectedDigest := "sha256:" + strings.Repeat("0", 64)
+	stalePin := staleSelectedRef + "@" + staleSelectedDigest
+	staleLatestDigest := "sha256:" + strings.Repeat("1", 64)
+	writeContainerFromLatestLock(t, workdir, stalePin, staleLatestDigest)
 
 	_, err = hostDaggerExec(ctx, t, workdir, "--silent", "update")
 	require.NoError(t, err)
@@ -740,9 +778,24 @@ func (LockfileSuite) TestContainerFromLatestLockLifecycle(ctx context.Context, t
 	require.NoError(t, err)
 	updatedPin := assertContainerFromLatestLockEntry(t, updatedLockBytes)
 	require.NotEqual(t, stalePin, updatedPin)
+	require.NotEqual(
+		t,
+		staleSelectedDigest,
+		assertOCISHAEntry(t, updatedLockBytes, staleSelectedRef),
+	)
+	require.NotEqual(
+		t,
+		staleLatestDigest,
+		assertOCISHAEntry(t, updatedLockBytes, "docker.io/library/alpine:latest"),
+	)
 }
 
-func writeContainerFromLatestLock(t *testctx.T, workdir, pin string) {
+func writeContainerFromLatestLock(
+	t *testctx.T,
+	workdir,
+	pin,
+	latestDigest string,
+) {
 	t.Helper()
 
 	ref, imageDigest, found := strings.Cut(pin, "@")
@@ -755,6 +808,15 @@ func writeContainerFromLatestLock(t *testctx.T, workdir, pin string) {
 		[]any{"docker.io/library/alpine"},
 		workspace.LookupResult{
 			Value:  tag,
+			Policy: workspace.PolicyPin,
+		},
+	))
+	require.NoError(t, lock.SetLookup(
+		"",
+		"oci-sha",
+		[]any{"docker.io/library/alpine:latest"},
+		workspace.LookupResult{
+			Value:  latestDigest,
 			Policy: workspace.PolicyPin,
 		},
 	))
@@ -774,6 +836,26 @@ func writeContainerFromLatestLock(t *testctx.T, workdir, pin string) {
 		lockBytes,
 		0o600,
 	))
+}
+
+func assertOCISHAEntry(t *testctx.T, lockBytes []byte, ref string) string {
+	t.Helper()
+
+	parsed, err := lockfile.Parse(lockBytes)
+	require.NoError(t, err)
+	for _, entry := range parsed.Entries() {
+		if entry.Namespace != "" || entry.Operation != "oci-sha" {
+			continue
+		}
+		if !equalLockInputs(entry.Inputs, []any{ref}) {
+			continue
+		}
+		value, ok := entry.Value.(string)
+		require.True(t, ok)
+		return value
+	}
+	require.FailNow(t, "expected oci-sha entry", ref)
+	return ""
 }
 
 func assertContainerFromLatestLockEntry(t *testctx.T, lockBytes []byte) string {
