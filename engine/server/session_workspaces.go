@@ -1161,8 +1161,12 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 	if bestEffort {
 		kept := make([]pendingModule, 0, len(demand))
 		for _, mod := range demand {
-			if err, ok := client.failedModules[moduleProgressName(mod)]; ok {
-				loadFailures = append(loadFailures, moduleLoadFailure(mod, err))
+			if loadErr, ok := client.failedModules[moduleProgressName(mod)]; ok {
+				failure, err := moduleLoadFailure(mod, loadErr)
+				if err != nil {
+					return nil, err
+				}
+				loadFailures = append(loadFailures, failure)
 				continue
 			}
 			kept = append(kept, mod)
@@ -1200,7 +1204,11 @@ func (srv *Server) ensureModulesLoadedModeWithSuccess(ctx context.Context, clien
 			client.recordFailedModule(load.mod, loadErr)
 			if bestEffort {
 				reportSkippedModule(ctx, moduleProgressName(load.mod), core.LoadFailureCause("", loadErr))
-				loadFailures = append(loadFailures, moduleLoadFailure(load.mod, loadErr))
+				failure, err := moduleLoadFailure(load.mod, loadErr)
+				if err != nil {
+					return nil, err
+				}
+				loadFailures = append(loadFailures, failure)
 				continue
 			}
 			if firstErr == nil {
@@ -1896,12 +1904,25 @@ func reportSkippedModule(ctx context.Context, name string, cause error) {
 // moduleLoadFailure is the API-facing record of a skipped module: its name
 // (matching the skipped-module span), its workspace directory (so generate
 // can tell whether the run regenerated it) and the described message.
-func moduleLoadFailure(mod pendingModule, err error) core.ModuleLoadFailure {
+func moduleLoadFailure(mod pendingModule, err error) (core.ModuleLoadFailure, error) {
+	opts, optsErr := schema.BuildLegacyModuleLoadOptions(
+		mod.Name,
+		mod.LegacyDefaultPath,
+		mod.DefaultPathContextSourceRef,
+		mod.DefaultPathContextSourcePin,
+		mod.ConfigDefaults,
+		mod.DefaultsFromDotEnv,
+		mod.ArgCustomizations,
+	)
+	if optsErr != nil {
+		return core.ModuleLoadFailure{}, fmt.Errorf("build load options for %q: %w", moduleProgressName(mod), optsErr)
+	}
 	return core.ModuleLoadFailure{
 		Name:    moduleProgressName(mod),
 		Dir:     mod.WorkspaceDir,
 		Message: core.DescribeLoadFailure(err),
-	}
+		Options: opts,
+	}, nil
 }
 
 func moduleLoadErr(load moduleLoadRequest, err error) error {

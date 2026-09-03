@@ -1132,6 +1132,41 @@ func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
 	})
 }
 
+func TestModuleLoadFailurePreservesWorkspaceLoadOptions(t *testing.T) {
+	t.Parallel()
+
+	failure, err := moduleLoadFailure(pendingModule{
+		Name:                        "configured-name",
+		LegacyDefaultPath:           true,
+		DefaultPathContextSourceRef: "/workspace",
+		DefaultPathContextSourcePin: "pin",
+		ConfigDefaults:              map[string]any{"required": "value"},
+		DefaultsFromDotEnv:          true,
+		ArgCustomizations: []*modules.ModuleConfigArgument{
+			{Argument: "required", Default: "customized"},
+		},
+	}, errors.New("load failed"))
+	require.NoError(t, err)
+	require.NotNil(t, failure.Options)
+
+	var args []string
+	for _, arg := range failure.Options.AsModuleArgs() {
+		args = append(args, arg.String())
+	}
+	joined := strings.Join(args, "\n")
+	for _, want := range []string{
+		`legacyNameOverride: "configured-name"`,
+		`legacyDefaultPath: true`,
+		`defaultPathContextSourceRef: "/workspace"`,
+		`defaultPathContextSourcePin: "pin"`,
+		`legacyWorkspaceConfigJson:`,
+		`legacyDefaultsFromDotEnv: true`,
+		`legacyArgCustomizationsJson:`,
+	} {
+		require.Contains(t, joined, want)
+	}
+}
+
 func TestWorkspaceConfigPendingModules(t *testing.T) {
 	t.Parallel()
 

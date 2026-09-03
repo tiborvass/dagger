@@ -93,6 +93,52 @@ type ModuleLoadFailure struct {
 	// Message is the described load error (see the engine's
 	// describeLoadFailure).
 	Message string `json:"message"`
+	// Options are the workspace configuration arguments used by the original
+	// load. Verification must use the same module variant after generation.
+	Options *ModuleLoadOptions `json:"options,omitempty"`
+}
+
+// ModuleLoadOptions stores workspace-specific configuration applied when
+// loading a module, such as its name override, settings, defaults, and argument
+// customizations. Post-generation verification reuses these options so it
+// reloads the same module variant as the original workspace load.
+type ModuleLoadOptions struct {
+	NameOverride                string `json:"nameOverride,omitempty"`
+	LegacyDefaultPath           bool   `json:"legacyDefaultPath,omitempty"`
+	DefaultPathContextSourceRef string `json:"defaultPathContextSourceRef,omitempty"`
+	DefaultPathContextSourcePin string `json:"defaultPathContextSourcePin,omitempty"`
+	WorkspaceConfigJSON         string `json:"workspaceConfigJSON,omitempty"`
+	DefaultsFromDotEnv          bool   `json:"defaultsFromDotEnv,omitempty"`
+	ArgCustomizationsJSON       string `json:"argCustomizationsJSON,omitempty"`
+}
+
+func (opts *ModuleLoadOptions) AsModuleArgs() []dagql.NamedInput {
+	if opts == nil {
+		return nil
+	}
+	args := []dagql.NamedInput{}
+	if opts.NameOverride != "" {
+		args = append(args, dagql.NamedInput{Name: "legacyNameOverride", Value: dagql.String(opts.NameOverride)})
+	}
+	if opts.LegacyDefaultPath {
+		args = append(args, dagql.NamedInput{Name: "legacyDefaultPath", Value: dagql.Boolean(true)})
+	}
+	if opts.DefaultPathContextSourceRef != "" {
+		args = append(args, dagql.NamedInput{Name: "defaultPathContextSourceRef", Value: dagql.String(opts.DefaultPathContextSourceRef)})
+		if opts.DefaultPathContextSourcePin != "" {
+			args = append(args, dagql.NamedInput{Name: "defaultPathContextSourcePin", Value: dagql.String(opts.DefaultPathContextSourcePin)})
+		}
+	}
+	if opts.WorkspaceConfigJSON != "" {
+		args = append(args, dagql.NamedInput{Name: "legacyWorkspaceConfigJson", Value: dagql.String(opts.WorkspaceConfigJSON)})
+		if opts.DefaultsFromDotEnv {
+			args = append(args, dagql.NamedInput{Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true)})
+		}
+	}
+	if opts.ArgCustomizationsJSON != "" {
+		args = append(args, dagql.NamedInput{Name: "legacyArgCustomizationsJson", Value: dagql.String(opts.ArgCustomizationsJSON)})
+	}
+	return args
 }
 
 // Regenerated reports whether any of the run's changed paths (workspace-root
@@ -378,7 +424,10 @@ func verifySkippedModule(ctx context.Context, generated dagql.ObjectResult[*Dire
 		return
 	}
 	var mod dagql.ObjectResult[*Module]
-	if err := dag.Select(ctx, src, &mod, dagql.Selector{Field: "asModule"}); err != nil {
+	if err := dag.Select(ctx, src, &mod, dagql.Selector{
+		Field: "asModule",
+		Args:  failure.Options.AsModuleArgs(),
+	}); err != nil {
 		rerr = LoadFailureCause("still fails to load with this run's changes: ", err)
 		return
 	}

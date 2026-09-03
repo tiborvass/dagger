@@ -4299,51 +4299,54 @@ func BuildLegacyAsModuleArgs(
 	defaultsFromDotEnv bool,
 	argCustomizations []*modules.ModuleConfigArgument,
 ) ([]dagql.NamedInput, error) {
-	args := []dagql.NamedInput{}
-	if nameOverride != "" {
-		args = append(args, dagql.NamedInput{
-			Name: "legacyNameOverride", Value: dagql.String(nameOverride),
-		})
+	opts, err := BuildLegacyModuleLoadOptions(
+		nameOverride,
+		legacyDefaultPath,
+		defaultPathContextSourceRef,
+		defaultPathContextSourcePin,
+		configDefaults,
+		defaultsFromDotEnv,
+		argCustomizations,
+	)
+	if err != nil {
+		return nil, err
 	}
-	if legacyDefaultPath {
-		args = append(args, dagql.NamedInput{
-			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
-		})
-	}
-	if defaultPathContextSourceRef != "" {
-		args = append(args, dagql.NamedInput{
-			Name: "defaultPathContextSourceRef", Value: dagql.String(defaultPathContextSourceRef),
-		})
-		if defaultPathContextSourcePin != "" {
-			args = append(args, dagql.NamedInput{
-				Name: "defaultPathContextSourcePin", Value: dagql.String(defaultPathContextSourcePin),
-			})
-		}
+	return opts.AsModuleArgs(), nil
+}
+
+// BuildLegacyModuleLoadOptions serializes the workspace-only configuration
+// needed to reproduce the same asModule variant later.
+func BuildLegacyModuleLoadOptions(
+	nameOverride string,
+	legacyDefaultPath bool,
+	defaultPathContextSourceRef string,
+	defaultPathContextSourcePin string,
+	configDefaults map[string]any,
+	defaultsFromDotEnv bool,
+	argCustomizations []*modules.ModuleConfigArgument,
+) (*core.ModuleLoadOptions, error) {
+	opts := &core.ModuleLoadOptions{
+		NameOverride:                nameOverride,
+		LegacyDefaultPath:           legacyDefaultPath,
+		DefaultPathContextSourceRef: defaultPathContextSourceRef,
+		DefaultPathContextSourcePin: defaultPathContextSourcePin,
+		DefaultsFromDotEnv:          defaultsFromDotEnv,
 	}
 	if len(configDefaults) > 0 {
 		wsJSON, err := json.Marshal(configDefaults)
 		if err != nil {
 			return nil, fmt.Errorf("encoding workspace config: %w", err)
 		}
-		args = append(args, dagql.NamedInput{
-			Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON)),
-		})
-		if defaultsFromDotEnv {
-			args = append(args, dagql.NamedInput{
-				Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true),
-			})
-		}
+		opts.WorkspaceConfigJSON = string(wsJSON)
 	}
 	if len(argCustomizations) > 0 {
 		custJSON, err := json.Marshal(argCustomizations)
 		if err != nil {
 			return nil, fmt.Errorf("encoding arg customizations: %w", err)
 		}
-		args = append(args, dagql.NamedInput{
-			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
-		})
+		opts.ArgCustomizationsJSON = string(custJSON)
 	}
-	return args, nil
+	return opts, nil
 }
 
 func (s *moduleSourceSchema) loadDependencyModules(
