@@ -51,8 +51,9 @@ func resolveDaggerGetRedirect(ctx context.Context, refString string) string {
 	cache, cacheErr := dagql.EngineCache(ctx)
 	clientMetadata, mdErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || mdErr != nil {
-		// No session cache available; probe directly.
-		return daggerGetProbe(ctx, refString)
+		// Redirect resolution requires session infrastructure. Keep standalone
+		// parsing network-free when no session cache or metadata is available.
+		return refString
 	}
 
 	res, err := cache.GetOrInitArbitrary(

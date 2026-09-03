@@ -124,3 +124,36 @@ func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
 	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxB, ref))
 	require.EqualValues(t, 2, requests.Load(), "different sessions should not share redirect results")
 }
+
+func TestResolveDaggerGetRedirectRequiresSessionInfrastructure(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Redirect(w, r, "https://github.com/dagger/dagger", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+
+	ref := "https://" + srv.Listener.Addr().String() + "/go"
+	for name, ctx := range map[string]context.Context{
+		"no session infrastructure": t.Context(),
+		"cache without metadata":    dagql.ContextWithCache(t.Context(), cache),
+		"metadata without cache": engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+			SessionID: "session-a",
+		}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, ref, resolveDaggerGetRedirect(ctx, ref))
+		})
+	}
+	require.Zero(t, requests.Load())
+}
