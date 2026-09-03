@@ -58,7 +58,7 @@ func resolveDaggerGetRedirect(ctx context.Context, refString string) string {
 	res, err := cache.GetOrInitArbitrary(
 		ctx,
 		clientMetadata.SessionID,
-		"module-dagger-get-redirect:"+refString,
+		"module-dagger-get-redirect:"+clientMetadata.SessionID+":"+refString,
 		func(ctx context.Context) (any, error) {
 			return daggerGetProbe(ctx, refString), nil
 		},

@@ -1,10 +1,14 @@
 package core
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,4 +88,39 @@ func TestDaggerGetProbeRejectsNonHTTPSLocation(t *testing.T) {
 
 	ref := "https://" + srv.Listener.Addr().String() + "/go"
 	require.Equal(t, ref, daggerGetProbe(t.Context(), ref))
+}
+
+func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Redirect(w, r, "https://github.com/dagger/dagger", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+
+	ctxForSession := func(sessionID string) context.Context {
+		ctx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{SessionID: sessionID})
+		return dagql.ContextWithCache(ctx, cache)
+	}
+
+	ref := "https://" + srv.Listener.Addr().String() + "/go"
+	ctxA := ctxForSession("session-a")
+	ctxB := ctxForSession("session-b")
+
+	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxA, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxA, ref))
+	require.EqualValues(t, 1, requests.Load(), "same-session lookup should hit the cache")
+
+	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxB, ref))
+	require.EqualValues(t, 2, requests.Load(), "different sessions should not share redirect results")
 }
