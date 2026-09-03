@@ -93,6 +93,31 @@ func (m *Minimal) Hello() string {
 		requireErrOut(t, err, "undefined: intentionallyUndefinedSymbol")
 		require.NotContains(t, err.Error(), "run `dagger generate`")
 	})
+
+	t.Run("preserves composed module source configuration", func(ctx context.Context, t *testctx.T) {
+		// Module initialization composes the config in memory before there is a
+		// config file to reload. Client schema generation must keep using that
+		// source while swapping in the freshly generated context.
+		generated := moduleFixture(t, c, "go/minimal").
+			WithoutFile("dagger.json").
+			With(daggerQuery(`{
+  moduleSource(refString: ".") {
+    withName(name: "minimal") {
+      withSDK(source: "go") {
+        withEngineVersion(version: "latest") {
+          withClient(generator: "go", outputDir: "./client") {
+            generatedContextDirectory { export(path: ".") }
+          }
+        }
+      }
+    }
+  }
+}`))
+
+		entries, err := generated.Directory("client").Entries(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, entries)
+	})
 }
 
 // Legacy dagger.json modules keep runtime codegen unconditionally; a stale

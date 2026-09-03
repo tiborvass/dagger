@@ -254,6 +254,8 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 		dagql.NodeFunc("_implementationScoped", s.moduleSourceImplementationScoped).
 			Doc(`The module source scoped to implementation identity only, i.e. source code and dependency content rather than client-specific provenance.`),
+		dagql.Func("_withContextDirectory", s.moduleSourceWithContextDirectory).
+			Doc(`Return this module source with its context replaced by the given directory.`),
 		dagql.NodeFunc("introspectionSchemaJSON", s.moduleSourceIntrospectionSchemaJSON).
 			Doc(`The introspection schema JSON file for this module source.`,
 				`This file represents the schema visible to the module's source code, including all core types and those from the dependencies.`,
@@ -2855,11 +2857,14 @@ func (s *moduleSourceSchema) runClientGenerator(
 	return genDirInst, nil
 }
 
-// generatedModuleSource re-loads srcInst from genDirInst — its context
-// directory with the run's generated files applied — at the same source root,
-// so consumers that need the module built (client schema introspection) see
-// the freshly generated code. A source without an SDK has no codegen output to
-// pick up and is returned as-is.
+// generatedModuleSource rebinds srcInst to genDirInst — its context directory
+// with the run's generated files applied — so consumers that need the module
+// built (client schema introspection) see the freshly generated code. Clone the
+// existing source instead of reloading it from its on-disk config: callers may
+// have composed mutations such as withName, withSDK, or withDependencies, and
+// runGeneratedContext does not write those changes to the config until after
+// client generation. A source without an SDK has no codegen output to pick up
+// and is returned as-is.
 func (s *moduleSourceSchema) generatedModuleSource(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -2870,16 +2875,38 @@ func (s *moduleSourceSchema) generatedModuleSource(
 	if src.SDK == nil || src.SDK.Source == "" {
 		return srcInst, nil
 	}
+	genDirID, err := genDirInst.ID()
+	if err != nil {
+		return srcInst, fmt.Errorf("generated context directory ID: %w", err)
+	}
 	var generatedSrc dagql.ObjectResult[*core.ModuleSource]
-	if err := dag.Select(ctx, genDirInst, &generatedSrc, dagql.Selector{
-		Field: "asModuleSource",
-		Args: []dagql.NamedInput{
-			{Name: "sourceRootPath", Value: dagql.String(filepath.ToSlash(src.SourceRootSubpath))},
-		},
+	if err := dag.Select(ctx, srcInst, &generatedSrc, dagql.Selector{
+		Field: "_withContextDirectory",
+		Args:  []dagql.NamedInput{{Name: "directory", Value: dagql.NewID[*core.Directory](genDirID)}},
 	}); err != nil {
 		return srcInst, err
 	}
 	return generatedSrc, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithContextDirectory(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Directory core.DirectoryID `internal:"true"`
+	},
+) (*core.ModuleSource, error) {
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := args.Directory.Load(ctx, dag)
+	if err != nil {
+		return nil, fmt.Errorf("load context directory: %w", err)
+	}
+	updated := src.Clone()
+	updated.ContextDirectory = dir
+	return updated, nil
 }
 
 // runGeneratedContext runs codegen, client generation, and module config writing for the given
