@@ -156,7 +156,7 @@ func TestDaggerGetProbeIgnoresAuthWallRedirects(t *testing.T) {
 	require.Equal(t, ref, daggerGetProbe(t.Context(), ref))
 }
 
-func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
+func TestResolveRemoteSourceURLCachesPerSession(t *testing.T) {
 	var requests atomic.Int32
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -183,15 +183,21 @@ func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
 	ctxA := ctxForSession("session-a")
 	ctxB := ctxForSession("session-b")
 
-	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxA, ref))
-	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxA, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", resolveRemoteSourceURL(ctxA, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", resolveRemoteSourceURL(ctxA, ref))
 	require.EqualValues(t, 1, requests.Load(), "same-session lookup should hit the cache")
 
-	require.Equal(t, "https://github.com/dagger/dagger", resolveDaggerGetRedirect(ctxB, ref))
+	require.Equal(t, "https://github.com/dagger/dagger", resolveRemoteSourceURL(ctxB, ref))
 	require.EqualValues(t, 2, requests.Load(), "different sessions should not share redirect results")
+
+	parsed, err := ParseRemoteSourceRef(ctxForSession("session-c"), ref+"@main")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger", parsed.URL)
+	require.Equal(t, "main", parsed.Version)
+	require.EqualValues(t, 3, requests.Load(), "remote source parsing should resolve the vanity URL")
 }
 
-func TestResolveDaggerGetRedirectRequiresSessionInfrastructure(t *testing.T) {
+func TestResolveRemoteSourceURLRequiresSessionInfrastructure(t *testing.T) {
 	var requests atomic.Int32
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -218,7 +224,7 @@ func TestResolveDaggerGetRedirectRequiresSessionInfrastructure(t *testing.T) {
 		}),
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, ref, resolveDaggerGetRedirect(ctx, ref))
+			require.Equal(t, ref, resolveRemoteSourceURL(ctx, ref))
 		})
 	}
 	require.Zero(t, requests.Load())

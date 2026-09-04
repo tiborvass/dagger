@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	// daggerGetQueryParam is the query flag appended to a module ref to probe
-	// for a redirect that points at the real module source.
+	// daggerGetQueryParam is the query flag appended to a remote source URL to
+	// probe for a redirect that points at the loadable source.
 	daggerGetQueryParam = "dagger-get"
 
 	// daggerGetProbeTimeout bounds the redirect probe so a slow or hanging host
-	// cannot block module resolution.
+	// cannot block remote source resolution.
 	daggerGetProbeTimeout = 5 * time.Second
 )
 
@@ -33,8 +33,8 @@ var daggerGetClient = &http.Client{
 	},
 }
 
-// resolveDaggerGetRedirect implements the module redirect mechanism: for https
-// (or schemeless, attempted over https) module refs, it fetches
+// resolveRemoteSourceURL implements vanity URL resolution for remote sources:
+// for https (or schemeless, attempted over https) refs, it fetches
 // "<ref>?dagger-get=1" and, if the host answers with a single 3xx pointing at
 // an absolute https Location, continues resolution with that destination. Any
 // "@version"/"@sha" suffix is stripped before the probe and re-appended to the
@@ -47,7 +47,7 @@ var daggerGetClient = &http.Client{
 // Redirect resolution requires session infrastructure (engine cache + client
 // metadata). When either is unavailable the ref is returned untouched and no
 // network probe is issued, so standalone/offline ref parsing stays network-free.
-func resolveDaggerGetRedirect(ctx context.Context, refString string) string {
+func resolveRemoteSourceURL(ctx context.Context, refString string) string {
 	if !daggerGetEligible(refString) {
 		return refString
 	}
@@ -64,7 +64,7 @@ func resolveDaggerGetRedirect(ctx context.Context, refString string) string {
 		// Scope the cached value to the session: GetOrInitArbitrary looks entries
 		// up by call key alone (the session ID only tracks ownership), so the
 		// session ID must be part of the key to keep results session-private.
-		"module-dagger-get-redirect:"+clientMetadata.SessionID+":"+refString,
+		"source-url:"+clientMetadata.SessionID+":"+refString,
 		func(ctx context.Context) (any, error) {
 			return daggerGetProbe(ctx, refString), nil
 		},
@@ -108,7 +108,7 @@ func daggerGetEligible(refString string) bool {
 // daggerGetProbe performs the actual single-hop redirect probe and returns the
 // resolved ref, or the original ref on any non-redirect outcome.
 func daggerGetProbe(ctx context.Context, refString string) string {
-	// Module refs spell versions with "@" (and historically "#"); normalize so
+	// Remote source refs spell versions with "@" (and historically "#"); normalize so
 	// url.Parse doesn't treat a version as a URL fragment.
 	normalized := strings.Replace(refString, "#", "@", 1)
 	if !strings.HasPrefix(normalized, gitref.SchemeHTTPS.Prefix()) {

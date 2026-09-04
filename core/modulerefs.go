@@ -70,7 +70,6 @@ func ParseSourceRef(
 			},
 		}, nil
 	case ModuleSourceKindGit:
-		refString = resolveDaggerGetRedirect(ctx, refString)
 		parsedRemoteRef, err := ParseRemoteSourceRef(ctx, refString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
@@ -94,7 +93,6 @@ func ParseSourceRef(
 	}
 
 	// Parse scheme and attempt to parse as git endpoint
-	refString = resolveDaggerGetRedirect(ctx, refString)
 	parsedRemoteRef, err := ParseRemoteSourceRef(ctx, refString)
 	switch {
 	case err == nil:
@@ -127,6 +125,7 @@ type RemoteSourceRef struct {
 }
 
 func ParseRemoteSourceRef(ctx context.Context, refString string) (RemoteSourceRef, error) {
+	refString = resolveRemoteSourceURL(ctx, refString)
 	parsed, err := gitref.Parse(ctx, refString)
 	if err != nil {
 		return RemoteSourceRef{}, err
