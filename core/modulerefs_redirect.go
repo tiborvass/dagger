@@ -2,12 +2,14 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/dagger/dagger/core/gitref"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
@@ -33,6 +35,14 @@ var daggerGetClient = &http.Client{
 	},
 }
 
+type sourceURLLookupLockKey struct{}
+
+// ContextWithSourceURLLookupLock makes an explicitly loaded workspace lock
+// available while resolving sources for a workspace overlay.
+func ContextWithSourceURLLookupLock(ctx context.Context, lock *workspace.Lock) context.Context {
+	return context.WithValue(ctx, sourceURLLookupLockKey{}, lock)
+}
+
 // resolveRemoteSourceURL implements vanity URL resolution for remote sources:
 // for https (or schemeless, attempted over https) refs, it fetches
 // "<ref>?dagger-get=1" and, if the host answers with a single 3xx pointing at
@@ -44,18 +54,57 @@ var daggerGetClient = &http.Client{
 // timeout, or transport error) it falls back to the original ref. The result is
 // cached per session so a ref is probed at most once per session.
 //
-// Redirect resolution requires session infrastructure (engine cache + client
-// metadata). When either is unavailable the ref is returned untouched and no
-// network probe is issued, so standalone/offline ref parsing stays network-free.
-func resolveRemoteSourceURL(ctx context.Context, refString string) string {
+// The current workspace lock is consulted first. On a miss, probing
+// requires session infrastructure (engine cache + client metadata); when either
+// is unavailable the ref is returned untouched, so standalone/offline parsing
+// stays network-free.
+func resolveRemoteSourceURL(ctx context.Context, refString string) (string, error) {
 	if !daggerGetEligible(refString) {
-		return refString
+		return refString, nil
+	}
+
+	sourceURL, version, err := splitSourceURLVersion(refString)
+	if err != nil {
+		return refString, nil
+	}
+
+	lock, lockOverridden := ctx.Value(sourceURLLookupLockKey{}).(*workspace.Lock)
+	var setLookup func(string, string, []any, string) error
+	query, queryErr := CurrentQuery(ctx)
+	if lockOverridden {
+		setLookup = lock.SetLookup
+	} else if queryErr == nil {
+		var ok bool
+		lock, ok, err = query.CurrentWorkspaceLock(ctx, false)
+		if err != nil {
+			return "", fmt.Errorf("source-url lockfile: %w", err)
+		}
+		if !ok {
+			lock = nil
+		}
+	}
+	lockInputs := []any{sourceURL}
+	if lock != nil {
+		if resolvedURL, ok := lock.GetLookup(workspace.CoreLockNamespace, workspace.LockOperationSourceURL, lockInputs); ok {
+			return sourceURLWithVersion(resolvedURL, version), nil
+		}
+		if !lockOverridden && queryErr == nil {
+			_, lockWritable, err := query.CurrentWorkspaceLock(ctx, true)
+			if err != nil {
+				return "", fmt.Errorf("source-url lockfile: %w", err)
+			}
+			if lockWritable {
+				setLookup = func(namespace, operation string, inputs []any, value string) error {
+					return query.SetCurrentWorkspaceLookup(ctx, namespace, operation, inputs, value)
+				}
+			}
+		}
 	}
 
 	cache, cacheErr := dagql.EngineCache(ctx)
 	clientMetadata, mdErr := engine.ClientMetadataFromContext(ctx)
 	if cacheErr != nil || mdErr != nil {
-		return refString
+		return refString, nil
 	}
 
 	res, err := cache.GetOrInitArbitrary(
@@ -71,12 +120,80 @@ func resolveRemoteSourceURL(ctx context.Context, refString string) string {
 	)
 	if err != nil {
 		slog.Debug("dagger-get redirect cache error; probing directly", "ref", refString, "error", err)
-		return daggerGetProbe(ctx, refString)
+		resolved := daggerGetProbe(ctx, refString)
+		return writeSourceURLLock(setLookup, lockInputs, refString, resolved)
 	}
 	if resolved, ok := res.Value().(string); ok && resolved != "" {
-		return resolved
+		return writeSourceURLLock(setLookup, lockInputs, refString, resolved)
 	}
-	return refString
+	return refString, nil
+}
+
+func writeSourceURLLock(
+	setLookup func(string, string, []any, string) error,
+	inputs []any,
+	originalRef string,
+	resolvedRef string,
+) (string, error) {
+	if setLookup == nil || resolvedRef == originalRef {
+		return resolvedRef, nil
+	}
+	resolvedURL, _, err := splitSourceURLVersion(resolvedRef)
+	if err != nil {
+		return resolvedRef, nil
+	}
+	if err := setLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationSourceURL,
+		inputs,
+		resolvedURL,
+	); err != nil {
+		return "", fmt.Errorf("set source-url lock entry: %w", err)
+	}
+	return resolvedRef, nil
+}
+
+func splitSourceURLVersion(refString string) (string, string, error) {
+	normalized := strings.Replace(refString, "#", "@", 1)
+	schemeless := !strings.HasPrefix(normalized, gitref.SchemeHTTPS.Prefix())
+	if schemeless {
+		normalized = gitref.SchemeHTTPS.Prefix() + normalized
+	}
+	u, err := url.Parse(normalized)
+	if err != nil {
+		return "", "", err
+	}
+	version := ""
+	if i := strings.Index(u.Path, "@"); i >= 0 {
+		version = u.Path[i+1:]
+		u.Path = u.Path[:i]
+	}
+	resolvedURL := u.String()
+	if schemeless {
+		resolvedURL = strings.TrimPrefix(resolvedURL, gitref.SchemeHTTPS.Prefix())
+	}
+	return resolvedURL, version, nil
+}
+
+func sourceURLWithVersion(sourceURL, version string) string {
+	if version == "" {
+		return sourceURL
+	}
+	schemeless := !strings.HasPrefix(sourceURL, gitref.SchemeHTTPS.Prefix())
+	parsedURL := sourceURL
+	if schemeless {
+		parsedURL = gitref.SchemeHTTPS.Prefix() + parsedURL
+	}
+	u, err := url.Parse(parsedURL)
+	if err != nil {
+		return sourceURL + "@" + version
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + "@" + version
+	resolved := u.String()
+	if schemeless {
+		resolved = strings.TrimPrefix(resolved, gitref.SchemeHTTPS.Prefix())
+	}
+	return resolved
 }
 
 // daggerGetEligible reports whether the redirect probe applies to refString.

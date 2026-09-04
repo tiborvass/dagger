@@ -125,7 +125,10 @@ type RemoteSourceRef struct {
 }
 
 func ParseRemoteSourceRef(ctx context.Context, refString string) (RemoteSourceRef, error) {
-	refString = resolveRemoteSourceURL(ctx, refString)
+	refString, err := resolveRemoteSourceURL(ctx, refString)
+	if err != nil {
+		return RemoteSourceRef{}, err
+	}
 	parsed, err := gitref.Parse(ctx, refString)
 	if err != nil {
 		return RemoteSourceRef{}, err
