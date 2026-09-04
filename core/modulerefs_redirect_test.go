@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
@@ -183,11 +184,17 @@ func TestResolveDaggerGetRedirectCachesPerSession(t *testing.T) {
 	ctxA := ctxForSession("session-a")
 	ctxB := ctxForSession("session-b")
 
-	require.Equal(t, "https://github.com/dagger/dagger", ResolveDaggerGetRedirect(ctxA, ref))
-	require.Equal(t, "https://github.com/dagger/dagger", ResolveDaggerGetRedirect(ctxA, ref))
+	resolved, err := ResolveDaggerGetRedirect(ctxA, ref)
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger", resolved)
+	resolved, err = ResolveDaggerGetRedirect(ctxA, ref)
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger", resolved)
 	require.EqualValues(t, 1, requests.Load(), "same-session lookup should hit the cache")
 
-	require.Equal(t, "https://github.com/dagger/dagger", ResolveDaggerGetRedirect(ctxB, ref))
+	resolved, err = ResolveDaggerGetRedirect(ctxB, ref)
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger", resolved)
 	require.EqualValues(t, 2, requests.Load(), "different sessions should not share redirect results")
 }
 
@@ -218,8 +225,77 @@ func TestResolveDaggerGetRedirectRequiresSessionInfrastructure(t *testing.T) {
 		}),
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, ref, ResolveDaggerGetRedirect(ctx, ref))
+			resolved, err := ResolveDaggerGetRedirect(ctx, ref)
+			require.NoError(t, err)
+			require.Equal(t, ref, resolved)
 		})
 	}
 	require.Zero(t, requests.Load())
+}
+
+func TestResolveDaggerGetRedirectUsesWorkspaceLock(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Redirect(w, r, "https://github.com/dagger/dagger?dagger-get=1", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	lock := workspace.NewLock()
+	ref := "https://" + srv.Listener.Addr().String() + "/go"
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationSourceURL,
+		[]any{ref},
+		"https://github.com/dagger/dagger",
+	))
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{workspaceLock: lock}})
+
+	resolved, err := ResolveDaggerGetRedirect(ctx, ref+"@main")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger@main", resolved)
+	require.Zero(t, requests.Load(), "lock hit should avoid the HTTP probe")
+}
+
+func TestResolveDaggerGetRedirectWritesWorkspaceLock(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Redirect(w, r, "https://github.com/dagger/dagger?dagger-get=1", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	lock := workspace.NewLock()
+	cache, err := dagql.NewCache(t.Context(), "", nil, nil)
+	require.NoError(t, err)
+	ctx := ContextWithQuery(t.Context(), &Query{Server: &mockServer{workspaceLock: lock, lockWritable: true}})
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{SessionID: "session-a"})
+	ctx = dagql.ContextWithCache(ctx, cache)
+	ref := "https://" + srv.Listener.Addr().String() + "/go"
+
+	resolved, err := ResolveDaggerGetRedirect(ctx, ref+"@main")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger@main", resolved)
+	require.EqualValues(t, 1, requests.Load())
+	locked, ok := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationSourceURL,
+		[]any{ref},
+	)
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/dagger/dagger", locked)
 }
