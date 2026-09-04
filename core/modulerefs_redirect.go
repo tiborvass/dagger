@@ -33,6 +33,12 @@ var daggerGetClient = &http.Client{
 	},
 }
 
+// ResolveDaggerGetRedirect resolves a dagger-get vanity URL for any Git-backed
+// source consumer, including both modules and workspaces.
+func ResolveDaggerGetRedirect(ctx context.Context, refString string) string {
+	return resolveDaggerGetRedirect(ctx, refString)
+}
+
 // resolveDaggerGetRedirect implements the module redirect mechanism: for https
 // (or schemeless, attempted over https) module refs, it fetches
 // "<ref>?dagger-get=1" and, if the host answers with a single 3xx pointing at
