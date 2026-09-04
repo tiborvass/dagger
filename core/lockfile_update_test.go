@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/dagger/dagger/core/workspace"
@@ -18,6 +20,57 @@ func TestUpdateWorkspaceLockEntry(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, `unsupported lock entry "acme" "resolve"`)
+}
+
+func TestUpdateSourceURLLockEntry(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://github.com/dagger/dagger?dagger-get=1", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	oldClient := daggerGetClient
+	daggerGetClient = srv.Client()
+	daggerGetClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	defer func() { daggerGetClient = oldClient }()
+
+	sourceURL := "https://" + srv.Listener.Addr().String() + "/go"
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationSourceURL,
+		[]any{sourceURL},
+		"https://github.com/old/repository",
+	))
+
+	require.NoError(t, UpdateWorkspaceLock(t.Context(), nil, lock))
+	resolved, ok := lock.GetLookup(
+		workspace.CoreLockNamespace,
+		workspace.LockOperationSourceURL,
+		[]any{sourceURL},
+	)
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/dagger/dagger", resolved)
+}
+
+func TestUpdateSourceURLLockEntryValidatesInputs(t *testing.T) {
+	for _, inputs := range [][]any{
+		nil,
+		{42},
+		{""},
+		{"https://example.com/source", "extra"},
+		workspace.LookupInputs(
+			[]any{"https://example.com/source"},
+			workspace.LookupOption{Name: "other", Value: true},
+		),
+	} {
+		_, err := updateSourceURLLockEntry(t.Context(), workspace.LookupEntry{
+			Operation: workspace.LockOperationSourceURL,
+			Inputs:    inputs,
+		})
+		require.Error(t, err)
+	}
 }
 
 func TestSelectedSHAEntry(t *testing.T) {
