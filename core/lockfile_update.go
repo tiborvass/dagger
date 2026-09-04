@@ -180,9 +180,26 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 		return updateGitLatestLockEntry(ctx, entry)
 	case entry.Namespace == workspace.CoreLockNamespace && entry.Operation == workspace.LockOperationGitSHA:
 		return updateGitSHALockEntry(ctx, entry)
+	case entry.Namespace == workspace.CoreLockNamespace && entry.Operation == workspace.LockOperationSourceURL:
+		return updateSourceURLLockEntry(ctx, entry)
 	default:
 		return "", fmt.Errorf("unsupported lock entry %q %q", entry.Namespace, entry.Operation)
 	}
+}
+
+func updateSourceURLLockEntry(ctx context.Context, entry workspace.LookupEntry) (string, error) {
+	required, options, err := workspace.ParseLookupInputs(entry.Inputs)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s inputs %v: %w", entry.Operation, entry.Inputs, err)
+	}
+	if len(required) != 1 || len(options) != 0 {
+		return "", fmt.Errorf("invalid %s inputs %v", entry.Operation, entry.Inputs)
+	}
+	sourceURL, ok := required[0].(string)
+	if !ok || sourceURL == "" {
+		return "", fmt.Errorf("invalid %s source URL %v", entry.Operation, required[0])
+	}
+	return daggerGetProbe(ctx, sourceURL), nil
 }
 
 type ociLockInputs struct {
