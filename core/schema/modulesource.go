@@ -341,7 +341,7 @@ func (s *moduleSourceSchema) moduleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get engine client: %w", err)
 	}
-	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), args.RefString, args.RefPin)
+	parsedRef, err := core.ParseSourceRef(ctx, core.NewCallerStatFS(bk), args.RefString, args.RefPin)
 	if err != nil {
 		return inst, err
 	}
@@ -352,12 +352,12 @@ func (s *moduleSourceSchema) moduleSource(
 
 	switch parsedRef.Kind {
 	case core.ModuleSourceKindLocal:
-		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.Local.ModPath, !args.DisableFindUp, args.AllowNotExists)
+		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.Local.Path, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, args.RefPin, !args.DisableFindUp, args.AllowNotExists)
+		inst, err = s.gitModuleSource(ctx, query, parsedRef.Remote, args.RefPin, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
 			return inst, err
 		}
@@ -460,7 +460,7 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 	}
 
 	source := workspace.ResolveModuleEntrySource(filepath.Dir(configPath), entry.Source)
-	parsedRef, err := core.ParseRefString(ctx, statFS, source, entry.Pin)
+	parsedRef, err := core.ParseSourceRef(ctx, statFS, source, entry.Pin)
 	if err != nil {
 		return inst, false, fmt.Errorf("failed to parse workspace module ref string: %w", err)
 	}
@@ -469,7 +469,7 @@ func (s *moduleSourceSchema) workspaceModuleSourceByName(
 		inst, err = s.localModuleSource(ctx, query, bk, source, false, allowNotExists)
 		return inst, true, err
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, entry.Pin, false, false)
+		inst, err = s.gitModuleSource(ctx, query, parsedRef.Remote, entry.Pin, false, false)
 		return inst, true, err
 	default:
 		return inst, false, fmt.Errorf("unsupported workspace module %q source kind %q", name, parsedRef.Kind)
@@ -537,7 +537,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			namedDep, ok := modCfg.DependencyByName(localPath)
 			if ok {
 				// found a dep in the default module config with the name localPath, load it and return it
-				parsedRef, err := core.ParseRefString(
+				parsedRef, err := core.ParseSourceRef(
 					ctx,
 					core.StatFSFunc(func(ctx context.Context, path string) (string, *core.Stat, error) {
 						path = filepath.Join(defaultFindUpSourceRootDir, path)
@@ -557,7 +557,7 @@ func (s *moduleSourceSchema) localModuleSource(
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
-					return s.gitModuleSource(ctx, query, parsedRef.Git, namedDep.Pin, false, false)
+					return s.gitModuleSource(ctx, query, parsedRef.Remote, namedDep.Pin, false, false)
 				}
 			}
 		}
@@ -786,7 +786,7 @@ func (s *moduleSourceSchema) findGitModuleConfig(
 func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
-	parsed *core.ParsedGitRefString,
+	parsed *core.RemoteSourceRef,
 	refPin string,
 	// whether to search up the directory tree for a module config file
 	doFindUp bool,
@@ -1977,14 +1977,14 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 				)
 			}
 
-			parsedGitRef, err := core.ParseGitRefString(ctx, removeArg)
+			parsedGitRef, err := core.ParseRemoteSourceRef(ctx, removeArg)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse git ref string %q: %w", removeArg, err)
 			}
 
 			_, err = matchVersion([]string{existingVersion}, argVersion, parsedGitRef.RepoRootSubdir)
 			if err != nil {
-				reqModVersion := parsedGitRef.ModVersion
+				reqModVersion := parsedGitRef.Version
 				if !strings.HasPrefix(reqModVersion, parsedGitRef.RepoRootSubdir) {
 					reqModVersion, _ = strings.CutPrefix(reqModVersion, parsedGitRef.RepoRootSubdir+"/")
 					existingVersion, _ = strings.CutPrefix(existingVersion, existingItem.Self().SourceRootSubpath+"/")

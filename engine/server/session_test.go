@@ -2070,9 +2070,9 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 
 		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main")
 		require.NoError(t, err)
-		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, ".", ref.workspaceSubdir)
+		require.Equal(t, "https://github.com/dagger/dagger", ref.SourceCloneRef)
+		require.Equal(t, "main", ref.Version)
+		require.Equal(t, "/", ref.RepoRootSubdir)
 	})
 
 	t.Run("supports address fragment ref and subdir", func(t *testing.T) {
@@ -2080,9 +2080,9 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 
 		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger#main:toolchains/changelog")
 		require.NoError(t, err)
-		require.Equal(t, "https://github.com/dagger/dagger", ref.cloneRef)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, "toolchains/changelog", ref.workspaceSubdir)
+		require.Equal(t, "https://github.com/dagger/dagger", ref.SourceCloneRef)
+		require.Equal(t, "main", ref.Version)
+		require.Equal(t, "toolchains/changelog", ref.RepoRootSubdir)
 	})
 
 	t.Run("supports legacy at-ref syntax", func(t *testing.T) {
@@ -2090,8 +2090,8 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 
 		ref, err := parseWorkspaceRemoteRef(context.Background(), "github.com/dagger/dagger/toolchains/changelog@main")
 		require.NoError(t, err)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, "toolchains/changelog", ref.workspaceSubdir)
+		require.Equal(t, "main", ref.Version)
+		require.Equal(t, "toolchains/changelog", ref.RepoRootSubdir)
 	})
 
 	t.Run("preserves legacy https at-ref syntax", func(t *testing.T) {
@@ -2099,8 +2099,8 @@ func TestParseWorkspaceRemoteRef(t *testing.T) {
 
 		ref, err := parseWorkspaceRemoteRef(context.Background(), "https://github.com/dagger/dagger@main")
 		require.NoError(t, err)
-		require.Equal(t, "main", ref.version)
-		require.Equal(t, ".", ref.workspaceSubdir)
+		require.Equal(t, "main", ref.Version)
+		require.Equal(t, "/", ref.RepoRootSubdir)
 	})
 }
 

@@ -200,7 +200,7 @@ func (s *workspaceSchema) resolveWorkspaceInstallSource(
 		if err != nil {
 			return src, "", err
 		}
-		parsed, err := core.ParseRefString(ctx, &core.DirectoryStatFS{Dir: workspaceRoot}, ref, "")
+		parsed, err := core.ParseSourceRef(ctx, &core.DirectoryStatFS{Dir: workspaceRoot}, ref, "")
 		if err != nil {
 			return src, "", fmt.Errorf("parse module ref %q: %w", ref, err)
 		}

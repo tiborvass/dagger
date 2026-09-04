@@ -2031,7 +2031,7 @@ func ResolveDepToSource(
 		}
 	}
 
-	parsedDepRef, err := ParseRefString(
+	parsedDepRef, err := ParseSourceRef(
 		ctx,
 		ModuleSourceStatFS{bk, parentSrc},
 		depSrcRef,

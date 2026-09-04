@@ -1114,7 +1114,7 @@ func parseWorkspaceRemoteAddress(ctx context.Context, address string) (workspace
 	return workspaceRemoteAddress{
 		CloneRef:    parsed.SourceCloneRef,
 		Path:        workspacePath,
-		Version:     parsed.ModVersion,
+		Version:     parsed.Version,
 		BaseAddress: gitref.RefString(parsed.SourceCloneRef, workspacePath, ""),
 	}, true, nil
 }

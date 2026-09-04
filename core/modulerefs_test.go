@@ -15,7 +15,7 @@ import (
 func TestModuleGitDefaultRefSelector(t *testing.T) {
 	t.Parallel()
 
-	parsed := &ParsedGitRefString{Parsed: gitref.Parsed{
+	parsed := &RemoteSourceRef{Parsed: gitref.Parsed{
 		RepoRootSubdir: "/module",
 	}}
 	for _, tc := range []struct {
@@ -66,10 +66,10 @@ func TestMatchVersion(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestParseRefString covers the kind detection and git/local delegation done by
-// ParseRefString. The exhaustive git ref parsing matrix lives in
+// TestParseSourceRef covers the kind detection and remote/local delegation done
+// by ParseSourceRef. The exhaustive git ref parsing matrix lives in
 // core/gitref.TestParse.
-func TestParseRefString(t *testing.T) {
+func TestParseSourceRef(t *testing.T) {
 	ctx := context.Background()
 
 	for _, tc := range []struct {
@@ -113,7 +113,7 @@ func TestParseRefString(t *testing.T) {
 	} {
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()
-			parsed, err := ParseRefString(ctx, neverExistsFS{}, tc.urlStr, "")
+			parsed, err := ParseSourceRef(ctx, neverExistsFS{}, tc.urlStr, "")
 			if tc.wantErrContains != "" {
 				require.ErrorContains(t, err, tc.wantErrContains)
 				return
@@ -124,13 +124,14 @@ func TestParseRefString(t *testing.T) {
 
 			switch tc.wantKind {
 			case ModuleSourceKindGit:
-				require.NotNil(t, parsed.Git)
-				require.Equal(t, tc.wantCloneRef, parsed.Git.SourceCloneRef)
-				require.Equal(t, tc.wantSubdir, parsed.Git.RepoRootSubdir)
-				require.Equal(t, tc.wantVersion, parsed.Git.ModVersion)
+				require.NotNil(t, parsed.Remote)
+				require.Equal(t, GitRefString(tc.wantCloneRef, tc.wantSubdir, ""), parsed.Remote.URL)
+				require.Equal(t, tc.wantCloneRef, parsed.Remote.SourceCloneRef)
+				require.Equal(t, tc.wantSubdir, parsed.Remote.RepoRootSubdir)
+				require.Equal(t, tc.wantVersion, parsed.Remote.Version)
 			case ModuleSourceKindLocal:
 				require.NotNil(t, parsed.Local)
-				require.Equal(t, tc.urlStr, parsed.Local.ModPath)
+				require.Equal(t, tc.urlStr, parsed.Local.Path)
 			}
 		})
 	}

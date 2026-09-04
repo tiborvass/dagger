@@ -43,39 +43,41 @@ func GitRefString(cloneRef, sourceRootSubpath, version string) string {
 	return gitref.RefString(cloneRef, sourceRootSubpath, version)
 }
 
-type ParsedRefString struct {
-	Kind  ModuleSourceKind
-	Local *ParsedLocalRefString
-	Git   *ParsedGitRefString
+// SourceRef is a parsed local or remote source reference. Module and workspace
+// loaders share this syntax and apply their own path semantics after parsing.
+type SourceRef struct {
+	Kind   ModuleSourceKind
+	Local  *LocalSourceRef
+	Remote *RemoteSourceRef
 }
 
-func ParseRefString(
+func ParseSourceRef(
 	ctx context.Context,
 	statFS StatFS,
 	refString string,
 	refPin string,
-) (_ *ParsedRefString, rerr error) {
+) (_ *SourceRef, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	kind := FastModuleSourceKindCheck(refString, refPin)
 	switch kind {
 	case ModuleSourceKindLocal:
-		return &ParsedRefString{
+		return &SourceRef{
 			Kind: kind,
-			Local: &ParsedLocalRefString{
-				ModPath: refString,
+			Local: &LocalSourceRef{
+				Path: refString,
 			},
 		}, nil
 	case ModuleSourceKindGit:
 		refString = resolveDaggerGetRedirect(ctx, refString)
-		parsedGitRef, err := ParseGitRefString(ctx, refString)
+		parsedRemoteRef, err := ParseRemoteSourceRef(ctx, refString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
 		}
-		return &ParsedRefString{
-			Kind: kind,
-			Git:  &parsedGitRef,
+		return &SourceRef{
+			Kind:   kind,
+			Remote: &parsedRemoteRef,
 		}, nil
 	}
 
@@ -83,29 +85,29 @@ func ParseRefString(
 	if _, stat, err := statFS.Stat(ctx, refString); err != nil {
 		slog.Debug("parseRefString stat error", "error", err)
 	} else if stat.IsDir() {
-		return &ParsedRefString{
+		return &SourceRef{
 			Kind: ModuleSourceKindLocal,
-			Local: &ParsedLocalRefString{
-				ModPath: refString,
+			Local: &LocalSourceRef{
+				Path: refString,
 			},
 		}, nil
 	}
 
 	// Parse scheme and attempt to parse as git endpoint
 	refString = resolveDaggerGetRedirect(ctx, refString)
-	parsedGitRef, err := ParseGitRefString(ctx, refString)
+	parsedRemoteRef, err := ParseRemoteSourceRef(ctx, refString)
 	switch {
 	case err == nil:
-		return &ParsedRefString{
-			Kind: ModuleSourceKindGit,
-			Git:  &parsedGitRef,
+		return &SourceRef{
+			Kind:   ModuleSourceKindGit,
+			Remote: &parsedRemoteRef,
 		}, nil
 	case errors.As(err, &gitref.EndpointError{}):
 		// couldn't connect to git endpoint, fallback to local
-		return &ParsedRefString{
+		return &SourceRef{
 			Kind: ModuleSourceKindLocal,
-			Local: &ParsedLocalRefString{
-				ModPath: refString,
+			Local: &LocalSourceRef{
+				Path: refString,
 			},
 		}, nil
 	default:
@@ -113,22 +115,29 @@ func ParseRefString(
 	}
 }
 
-type ParsedLocalRefString struct {
-	ModPath string
+type LocalSourceRef struct {
+	Path string
 }
 
-// ParsedGitRefString pairs the pure parsed git-ref data (gitref.Parsed) with
-// the dagql-aware GitRef resolution that needs the engine schema.
-type ParsedGitRefString struct {
+// RemoteSourceRef pairs the loadable, versionless source URL and version with
+// the parsed Git data needed by remote source loaders.
+type RemoteSourceRef struct {
+	URL string
 	gitref.Parsed
 }
 
-func ParseGitRefString(ctx context.Context, refString string) (ParsedGitRefString, error) {
+func ParseRemoteSourceRef(ctx context.Context, refString string) (RemoteSourceRef, error) {
 	parsed, err := gitref.Parse(ctx, refString)
-	return ParsedGitRefString{parsed}, err
+	if err != nil {
+		return RemoteSourceRef{}, err
+	}
+	return RemoteSourceRef{
+		URL:    gitref.RefString(parsed.SourceCloneRef, parsed.RepoRootSubdir, ""),
+		Parsed: parsed,
+	}, nil
 }
 
-func (p *ParsedGitRefString) GitRef(
+func (p *RemoteSourceRef) GitRef(
 	ctx context.Context,
 	dag *dagql.Server,
 	pinCommitRef string, // "" if none
@@ -143,7 +152,7 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	var modTag string
-	if p.HasVersion && semver.IsValid(p.ModVersion) {
+	if p.HasVersion && semver.IsValid(p.Version) {
 		var tags dagql.Array[dagql.String]
 		err := dag.Select(ctx, dag.Root(), &tags,
 			dagql.Selector{
@@ -165,7 +174,7 @@ func (p *ParsedGitRefString) GitRef(
 			allTags[i] = tag.String()
 		}
 
-		matched, err := matchVersion(allTags, p.ModVersion, p.RepoRootSubdir)
+		matched, err := matchVersion(allTags, p.Version, p.RepoRootSubdir)
 		if err != nil {
 			return inst, fmt.Errorf("matching version to tags: %w", err)
 		}
@@ -193,7 +202,7 @@ func (p *ParsedGitRefString) GitRef(
 		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
 			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String(p.ModVersion)},
+				{Name: "name", Value: dagql.String(p.Version)},
 			},
 		})
 	case pinCommitRef != "" && !pinIsSHA:
@@ -226,7 +235,7 @@ func (p *ParsedGitRefString) GitRef(
 
 func moduleGitDefaultRefSelector(
 	ctx context.Context,
-	p *ParsedGitRefString,
+	p *RemoteSourceRef,
 ) dagql.Selector {
 	if !Supports(ctx, workspace.LatestReleaseVersion) {
 		return dagql.Selector{Field: "head"}

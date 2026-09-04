@@ -4,8 +4,8 @@
 // package (and the Linux-only engine code that comes with it) so that the CLI
 // can reuse this logic and still cross-compile for darwin/windows.
 //
-// The richer, dagql-aware wrappers (ModuleSourceKind enum, ParsedGitRefString
-// with its GitRef resolution) live in package core and delegate here.
+// The richer, dagql-aware source references live in package core and delegate
+// here.
 package gitref
 
 import (
@@ -101,11 +101,9 @@ func FastKindCheck(refString, refPin string) Kind {
 	}
 }
 
-// Parsed holds the parsed components of a git ref string.
+// Parsed holds the parsed components of a remote source reference.
 type Parsed struct {
-	ModPath string
-
-	ModVersion string
+	Version    string
 	HasVersion bool
 
 	RepoRoot       *vcs.RepoRoot
@@ -152,36 +150,34 @@ func Parse(ctx context.Context, refString string) (_ Parsed, rerr error) {
 		return Parsed{}, EndpointError{fmt.Errorf("failed to create git endpoint: %w", err)}
 	}
 
-	gitParsed := Parsed{
-		ModPath: endpoint.Host + endpoint.Path,
-		Scheme:  scheme,
-	}
+	gitParsed := Parsed{Scheme: scheme}
+	importPath := endpoint.Host + endpoint.Path
 
 	parts := strings.SplitN(endpoint.Path, "@", 2)
 	if len(parts) == 2 {
-		gitParsed.ModPath = endpoint.Host + parts[0]
-		gitParsed.ModVersion = parts[1]
+		importPath = endpoint.Host + parts[0]
+		gitParsed.Version = parts[1]
 		gitParsed.HasVersion = true
 	}
 
 	// Try to isolate the root of the git repo
 	// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
 	// would be compatible with this function to benefit from the repo URL and root splitting
-	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.ModPath, false)
+	repoRoot, err := vcs.RepoRootForImportPath(importPath, false)
 	if err != nil {
 		return Parsed{}, EndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
 	}
 	if repoRoot == nil || repoRoot.VCS == nil {
-		return Parsed{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.ModPath)
+		return Parsed{}, fmt.Errorf("invalid repo root for import path: %s", importPath)
 	}
 	if repoRoot.VCS.Name != "Git" {
-		return Parsed{}, fmt.Errorf("repo root is not a Git repo: %s", gitParsed.ModPath)
+		return Parsed{}, fmt.Errorf("repo root is not a Git repo: %s", importPath)
 	}
 
 	gitParsed.RepoRoot = repoRoot
 
 	// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-	gitParsed.RepoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.ModPath, repoRoot.Root), "/")
+	gitParsed.RepoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(importPath, repoRoot.Root), "/")
 	if gitParsed.RepoRootSubdir == "" {
 		gitParsed.RepoRootSubdir = "/"
 	}
