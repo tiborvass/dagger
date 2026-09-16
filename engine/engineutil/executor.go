@@ -49,10 +49,10 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	// NetworkOwnerDaggerland marks trusted Dagger runtime work. Internal is not a
+	// DaggerlandRealm marks trusted Dagger runtime work. Internal is not a
 	// trust boundary: user module processes are internal telemetry plumbing but
 	// still userland-owned network traffic.
-	NetworkOwnerDaggerland bool `json:"-"`
+	DaggerlandRealm bool `json:"-"`
 
 	// UseRecipeIDsByDefault configures nested clients started by this exec to
 	// resolve id() as recipe-form IDs unless explicitly requested otherwise.
@@ -209,24 +209,29 @@ func (c *Client) Run(
 		}
 		ctx, execRunSpan = beginOTelExecRun(ctx, execIdent, attrs...)
 	}
-	err := c.run(ctx, state,
-		namedSetupFunc{"setupNetwork", c.setupNetwork},
-		namedSetupFunc{"injectInit", c.injectInit},
-		namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
-		namedSetupFunc{"filterEnvs", c.filterEnvs},
-		namedSetupFunc{"setupRootfs", c.setupRootfs},
-		namedSetupFunc{"setUserGroup", c.setUserGroup},
-		namedSetupFunc{"setExitCodePath", c.setExitCodePath},
-		namedSetupFunc{"setupStdio", c.setupStdio},
-		namedSetupFunc{"setupOTel", c.setupOTel},
-		namedSetupFunc{"setupSecretScrubbing", c.setupSecretScrubbing},
-		namedSetupFunc{"setProxyEnvs", c.setProxyEnvs},
-		namedSetupFunc{"enableGPU", c.enableGPU},
-		namedSetupFunc{"createCWD", c.createCWD},
-		namedSetupFunc{"setupNestedClient", c.setupNestedClient},
-		namedSetupFunc{"installCACerts", c.installCACerts},
-		namedSetupFunc{"runContainer", c.runContainer},
-	)
+	ctx, err := enginetel.WithNetworkRecording(ctx)
+	if err != nil {
+		err = fmt.Errorf("create exec network recorders: %w", err)
+	} else {
+		err = c.run(ctx, state,
+			namedSetupFunc{"setupNetwork", c.setupNetwork},
+			namedSetupFunc{"injectInit", c.injectInit},
+			namedSetupFunc{"generateBaseSpec", c.generateBaseSpec},
+			namedSetupFunc{"filterEnvs", c.filterEnvs},
+			namedSetupFunc{"setupRootfs", c.setupRootfs},
+			namedSetupFunc{"setUserGroup", c.setUserGroup},
+			namedSetupFunc{"setExitCodePath", c.setExitCodePath},
+			namedSetupFunc{"setupStdio", c.setupStdio},
+			namedSetupFunc{"setupOTel", c.setupOTel},
+			namedSetupFunc{"setupSecretScrubbing", c.setupSecretScrubbing},
+			namedSetupFunc{"setProxyEnvs", c.setProxyEnvs},
+			namedSetupFunc{"enableGPU", c.enableGPU},
+			namedSetupFunc{"createCWD", c.createCWD},
+			namedSetupFunc{"setupNestedClient", c.setupNestedClient},
+			namedSetupFunc{"installCACerts", c.installCACerts},
+			namedSetupFunc{"runContainer", c.runContainer},
+		)
+	}
 	execOp.EndErr(err)
 	if execRunSpan != nil {
 		recordExecContentPreferredDigest(execRunSpan, execMD)
