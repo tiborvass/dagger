@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How Dagger measures network traffic exactly while retaining useful per-operation estimates.">
+  <title>Dagger network accounting</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b17'/%3E%3Cpath d='M14 42h10V22H14v20Zm13 0h10V12H27v30Zm13 0h10V28H40v14Z' fill='%235eead4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="deck" aria-live="polite">
+    <section class="slide active" data-title="Network bytes in Dagger">
+      <div class="eyebrow">Dagger network metrics</div>
+      <div class="hero">
+        <div class="hero-copy">
+          <h1>From useful estimates to <span class="accent">exact totals</span></h1>
+          <p class="lede">How we measure network traffic without confusing container-to-container transfers with traffic that leaves Dagger.</p>
+        </div>
+        <div class="hero-mark" aria-hidden="true">
+          <strong>RX<br>TX</strong>
+          <span>network layer</span>
+        </div>
+      </div>
+      <div class="footer-note">Use ← → or space to navigate</div>
+    </section>
+
+    <section class="slide" data-title="Why measure it">
+      <div class="eyebrow">01 · The goal</div>
+      <div class="content">
+        <h2>Answer two different questions</h2>
+        <div class="two-col">
+          <article class="card highlight">
+            <h3 class="accent">How much left Dagger?</h3>
+            <p class="lede">A complete network-layer total, split between internal and external endpoints.</p>
+          </article>
+          <article class="card">
+            <h3 class="blue">Which operation caused it?</h3>
+            <p class="lede">A useful estimate attached to <code>withExec</code>, HTTP, Git, registry, filesync, sockets, tunnels, and LLM operations.</p>
+          </article>
+        </div>
+        <div class="equation">One counter cannot answer both questions well.</div>
+      </div>
+      <div class="footer-note">Coverage and attribution are separate problems</div>
+    </section>
+
+    <section class="slide" data-title="The old metric">
+      <div class="eyebrow">02 · The original problem</div>
+      <div class="content">
+        <h2>One number merged two very different transfers</h2>
+        <div class="metric-row">
+          <div><div class="value accent">32</div><span class="label">MiB from another Dagger container</span></div>
+          <div class="operator">+</div>
+          <div><div class="value orange">8</div><span class="label">MiB from the Internet</span></div>
+          <div class="operator">=</div>
+          <div><div class="value red">40</div><span class="label">MiB reported as “Network Tx”</span></div>
+        </div>
+        <p class="lede">The old host-veth counter mixed internal and external bytes. Its direction was also reversed: host-side TX is container-side RX.</p>
+      </div>
+      <div class="footer-note">Correct bytes, wrong meaning</div>
+    </section>
+
+    <section class="slide" data-title="Traffic outside withExec">
+      <div class="eyebrow">03 · A larger blind spot</div>
+      <div class="content">
+        <h2>Not every transfer happens inside a user container</h2>
+        <div class="flow" aria-label="Engine network paths">
+          <div class="node">User request</div><div class="arrow">→</div>
+          <div class="node">Dagger engine</div><div class="arrow">→</div>
+          <div class="node">HTTP · Git · Registry<br>Filesync · LLM</div><div class="arrow">→</div>
+          <div class="node">Remote endpoint</div>
+        </div>
+        <div class="two-col">
+          <article class="card"><h3>Container traffic</h3><ul class="clean"><li>Visible on the container veth</li><li>Includes <code>withExec</code> and services</li></ul></article>
+          <article class="card warn"><h3>Engine traffic</h3><ul class="clean"><li>Can bypass every user-container veth</li><li>Still needs complete accounting</li></ul></article>
+        </div>
+      </div>
+      <div class="footer-note">A veth-only solution cannot cover the engine</div>
+    </section>
+
+    <section class="slide" data-title="First attempt">
+      <div class="eyebrow">04 · First attempt</div>
+      <div class="content">
+        <h2>Measure where each operation reads or writes data</h2>
+        <div class="three-col">
+          <article class="card"><h3>HTTP</h3><p>Count response-body bytes.</p></article>
+          <article class="card"><h3>Git</h3><p>Parse the received pack size from progress.</p></article>
+          <article class="card"><h3>Registry</h3><p>Count manifests, config, and compressed layers.</p></article>
+          <article class="card"><h3>Filesync</h3><p>Count bytes at copy boundaries.</p></article>
+          <article class="card"><h3>Sockets & tunnels</h3><p>Count payload copied in each direction.</p></article>
+          <article class="card"><h3>LLM</h3><p>Count request and response bodies.</p></article>
+        </div>
+        <div class="equation">Excellent attribution. Incomplete network totals.</div>
+      </div>
+      <div class="footer-note">These became the per-operation estimates</div>
+    </section>
+
+    <section class="slide" data-title="Why estimates stay estimates">
+      <div class="eyebrow">05 · Limits of application measurement</div>
+      <div class="content">
+        <h2>The payload is not the packet</h2>
+        <div class="two-col">
+          <article class="card highlight">
+            <h3 class="accent">What we can assign</h3>
+            <ul class="clean"><li>HTTP body bytes</li><li>Git compressed pack size</li><li>Registry layer payloads</li><li>Bytes copied for one operation</li></ul>
+          </article>
+          <article class="card warn">
+            <h3 class="orange">What may be shared or missing</h3>
+            <ul class="clean"><li>IP, TCP, TLS, HTTP/2 and HTTP/3 overhead</li><li>Connection setup and retransmissions</li><li>One connection multiplexed across operations</li><li>Long-lived pooled connections</li></ul>
+          </article>
+        </div>
+        <p class="lede">Per-operation values are deliberately labeled estimates. Pretending otherwise would create false precision.</p>
+      </div>
+      <div class="footer-note">Useful for attribution, not authoritative totals</div>
+    </section>
+
+    <section class="slide" data-title="The final model">
+      <div class="eyebrow">06 · Final design</div>
+      <div class="content">
+        <h2>A hybrid model</h2>
+        <div class="two-col">
+          <article class="card highlight"><h3 class="accent">Authoritative total</h3><div class="big-number">eBPF</div><p class="caption">Counts traffic at the engine cgroup boundary. Complete across the engine and its child cgroups.</p></article>
+          <article class="card"><h3 class="blue">Per-operation attribution</h3><div class="big-number blue">APP</div><p class="caption">Measures payload at each operation’s transfer boundary. Useful, but approximate.</p></article>
+        </div>
+        <div class="equation"><span class="accent">Exact total</span> answers “how much?” · <span class="blue">Estimates</span> answer “which operation?”</div>
+      </div>
+      <div class="footer-note">Two views, one coherent model</div>
+    </section>
+
+    <section class="slide" data-title="Two dimensions">
+      <div class="eyebrow">07 · Classification</div>
+      <div class="content">
+        <h2>Realm and destination are independent</h2>
+        <div class="matrix">
+          <div></div><div class="head">Internal endpoint</div><div class="head">External endpoint</div>
+          <div class="side">Userland</div>
+          <div class="cell"><strong>Userland · internal</strong><p>A user container downloads from another Dagger service.</p></div>
+          <div class="cell target"><strong>Userland · external</strong><p>User work reaches GitHub, a registry, or an Internet API.</p></div>
+          <div class="side">Daggerland</div>
+          <div class="cell"><strong>Daggerland · internal</strong><p>The engine talks to an official SDK runtime on a Dagger network.</p></div>
+          <div class="cell"><strong>Daggerland · external</strong><p>The engine downloads a trusted runtime or helper image.</p></div>
+        </div>
+        <p class="lede"><span class="orange">External userland</span> is the chargeable class in the proposed model—typically TX for provider egress.</p>
+      </div>
+      <div class="footer-note">Who caused it? · Where did it go?</div>
+    </section>
+
+    <section class="slide" data-title="How exact counting works">
+      <div class="eyebrow">08 · Exact totals</div>
+      <div class="content">
+        <h2>Count every network packet</h2>
+        <p class="lede">Dagger watches network traffic from the engine and every container it starts.</p>
+        <div class="flow packet-flow">
+          <div class="node"><strong>1 · See it</strong><span>A packet is sent or received.</span></div><div class="arrow">→</div>
+          <div class="node"><strong>2 · Measure it</strong><span>Count the whole IP packet, including headers.</span></div><div class="arrow">→</div>
+          <div class="node"><strong>3 · Label it</strong><span>Record who owns it, where it went, and its direction.</span></div>
+        </div>
+        <div class="equation packet-example">
+          <span>User code sends a 1,500-byte packet to the Internet</span>
+          <strong>userland · external · TX · 1,500 bytes</strong>
+        </div>
+      </div>
+      <div class="footer-note">The result is one exact, engine-wide total</div>
+    </section>
+
+    <section class="slide" data-title="The eBPF counter">
+      <div class="eyebrow">09 · Exact totals in code</div>
+      <div class="content">
+        <h2>This is the exact counter</h2>
+        <div class="two-col code-explainer">
+          <div class="code">SEC("cgroup_skb/egress")
+int count_cgroup_egress(struct __sk_buff *skb)
+{
+    return add_owner_bytes(skb, DIR_TX);
+}
+
+__u8 scope = classify_l3(skb, direction);
+__u8 owner = packet_owner(skb, direction);
+...
+*bytes += skb-&gt;len;</div>
+          <article class="card highlight">
+            <ul class="clean">
+              <li><code>egress</code>: run for every outgoing packet</li>
+              <li><code>DIR_TX</code>: record it as transmitted</li>
+              <li><code>scope</code>: internal or external destination</li>
+              <li><code>owner</code>: userland or daggerland</li>
+              <li><code>skb-&gt;len</code>: add the full IP packet size</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+      <div class="footer-note">engine/ebpf/nettracer/bpf/netbytes.bpf.c · add_owner_bytes + count_cgroup_egress</div>
+    </section>
+
+    <section class="slide" data-title="Realm in code">
+      <div class="eyebrow">10 · Realm in code</div>
+      <div class="content">
+        <h2>Assign the realm before traffic starts</h2>
+        <p class="lede">Engine sockets use a realm-specific dialer. Child processes inherit the realm of their cgroup.</p>
+        <div class="two-col">
+          <article class="card highlight">
+            <h3 class="accent">A userland TCP connection</h3>
+            <div class="code">dialer := realm.Userland.Dialer(net.Dialer{})
+
+conn, err := dialer.DialContext(
+    ctx, "tcp", address,
+)</div>
+          </article>
+          <article class="card">
+            <h3 class="blue">A daggerland HTTP pool</h3>
+            <div class="code">client := realm.Daggerland.HTTPClient(
+    baseTransport,
+)
+
+resp, err := client.Do(req)</div>
+          </article>
+        </div>
+        <p class="lede">A fixed pool has one immutable realm. For request-selected pools, <code>realm.With</code> marks the context and <code>realm.NewTransport</code> chooses a separate userland or daggerland pool.</p>
+      </div>
+      <div class="footer-note">No realm means no new engine connection in strict mode</div>
+    </section>
+
+    <section class="slide" data-title="What users see">
+      <div class="eyebrow">11 · Telemetry outputs</div>
+      <div class="content">
+        <h2>Two metric families, clearly labeled</h2>
+        <div class="two-col">
+          <article class="card">
+            <h3 class="blue">Per-operation estimates</h3>
+            <div class="code">dagger.io/metrics.network.rx.bytes
+dagger.io/metrics.network.tx.bytes
+
+withExec · http · git
+container.from · registry.push
+filesync · host.socket · host.tunnel · llm</div>
+          </article>
+          <article class="card highlight">
+            <h3 class="accent">Authoritative totals</h3>
+            <div class="code">dagger_network_bytes_total
+
+dagger_network_accounting_available
+dagger_network_unattributed_bytes_total
+dagger_network_unattributed_packets_total
+dagger_network_realm_enforced</div>
+          </article>
+        </div>
+      </div>
+      <div class="footer-note">Legacy netstat metrics are removed</div>
+    </section>
+
+    <section class="slide" data-title="Reconciling both views">
+      <div class="eyebrow">12 · Reconciliation</div>
+      <div class="content">
+        <h2>The difference is visible, not invented</h2>
+        <div class="equation">authoritative external userland total<br>− sum of matching operation estimates<br>= unallocated protocol + shared-connection bytes</div>
+        <div class="two-col">
+          <article class="card"><h3>What we can do</h3><p>Show the residual explicitly, compare it over time, and allocate it proportionally in a report if desired.</p></article>
+          <article class="card warn"><h3>What we should not do</h3><p>Claim that shared TLS or HTTP/2 connection overhead belongs exactly to one operation.</p></article>
+        </div>
+        <p class="lede">The exact total stays exact. The operation breakdown stays honest about uncertainty.</p>
+      </div>
+      <div class="footer-note">No bytes disappear; some bytes remain unattributed to one operation</div>
+    </section>
+
+    <section class="slide" data-title="Demo walkthrough">
+      <div class="eyebrow">13 · Live demo</div>
+      <div class="content">
+        <h2>What to point out</h2>
+        <div class="three-col">
+          <article class="card"><h3>1 · Old view</h3><p><strong class="red">40 MiB</strong> merges a 32 MiB internal download and an 8 MiB external download.</p></article>
+          <article class="card"><h3>2 · New exec view</h3><p><strong class="accent">32 MiB internal</strong> and <strong class="orange">8 MiB external</strong> appear separately, in container direction.</p></article>
+          <article class="card"><h3>3 · Engine totals</h3><p>HTTP, Git, image, registry, filesync, socket, tunnel, and exec traffic all appear in cgroup totals.</p></article>
+        </div>
+        <div class="code">dagger shell -W github.com/dagger/dagger@pull/14159/head \
+  engine-dev:playground
+
+./hack/demo-network-metrics.sh</div>
+        <p class="lede">The demo also checks strict realms, successful cgroup registration, and the absence of legacy <code>netstat</code> metrics.</p>
+      </div>
+      <div class="footer-note">Wait for PASS</div>
+    </section>
+
+  </main>
+
+  <div class="help" aria-hidden="true">← → navigate · Home / End jump · F fullscreen</div>
+  <nav class="controls" aria-label="Presentation controls">
+    <button id="prev" type="button" aria-label="Previous slide">←</button>
+    <span class="counter" id="counter">01 / 14</span>
+    <button id="next" type="button" aria-label="Next slide">→</button>
+    <button id="fullscreen" type="button" aria-label="Toggle fullscreen">⛶</button>
+  </nav>
+  <div class="progress" aria-hidden="true"><span id="progress"></span></div>
+  <script src="app.js"></script>
+</body>
+</html>
