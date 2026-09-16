@@ -9,6 +9,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dagger/dagger/engine/realm"
+	enginetelemetry "github.com/dagger/dagger/engine/telemetry"
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -31,12 +33,11 @@ const maxBodyCapture = 256 * 1024 // 256 KiB
 // transport, which logs bodies and never headers — a bearer token must not
 // reach telemetry.
 func (endpoint *LLMEndpoint) otelHTTPClient(provider string) *http.Client {
-	var base http.RoundTripper
+	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if endpoint.dial != nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.DialContext = endpoint.dial
-		base = transport
 	}
+	var base http.RoundTripper = realm.Userland.Transport(transport)
 	base = newCredentialTransport(base, endpoint.AuthTokenSource, endpoint.credentialApplier())
 	return &http.Client{
 		Transport: newLLMOTelTransport(base, provider),
@@ -100,7 +101,14 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return nil, err
 		}
 		reqBody = fullBody
-		req.Body = io.NopCloser(bytes.NewReader(fullBody))
+		body := io.NopCloser(bytes.NewReader(fullBody))
+		req.Body = &teeReadCloser{
+			reader: body,
+			closer: body,
+			onRead: func(n int) {
+				enginetelemetry.RecordNetworkTX(req.Context(), int64(n))
+			},
+		}
 		req.ContentLength = int64(len(fullBody))
 		fmt.Fprintf(stdio.Stdout, ">>> %s %s\n%s\n", req.Method, req.URL.Path, captured)
 	}
@@ -128,6 +136,9 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		resp.Body = &teeReadCloser{
 			reader: io.TeeReader(resp.Body, stdio.Stdout),
 			closer: resp.Body,
+			onRead: func(n int) {
+				enginetelemetry.RecordNetworkRX(req.Context(), int64(n))
+			},
 			onClose: func() {
 				span.End()
 				stdio.Close()
@@ -136,6 +147,7 @@ func (t *llmOTelTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	} else if resp.Body != nil {
 		// Non-streaming: buffer, log, and replace.
 		captured, fullBody, readErr := captureBody(resp.Body)
+		enginetelemetry.RecordNetworkRX(req.Context(), int64(len(fullBody)))
 		if readErr == nil {
 			resp.Body = io.NopCloser(bytes.NewReader(fullBody))
 			fmt.Fprintf(stdio.Stdout, "<<< %d\n%s\n", resp.StatusCode, captured)
@@ -173,11 +185,16 @@ func revealTransport(span trace.Span) {
 type teeReadCloser struct {
 	reader  io.Reader
 	closer  io.Closer
+	onRead  func(int)
 	onClose func()
 }
 
 func (t *teeReadCloser) Read(p []byte) (int, error) {
-	return t.reader.Read(p)
+	n, err := t.reader.Read(p)
+	if n > 0 && t.onRead != nil {
+		t.onRead(n)
+	}
+	return n, err
 }
 
 func (t *teeReadCloser) Close() error {
@@ -263,7 +280,7 @@ func captureBody(r io.ReadCloser) (captured string, full []byte, err error) {
 	full, err = io.ReadAll(r)
 	r.Close()
 	if err != nil {
-		return "", nil, err
+		return "", full, err
 	}
 	if len(full) <= maxBodyCapture {
 		return string(full), full, nil
