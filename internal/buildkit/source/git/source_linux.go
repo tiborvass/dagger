@@ -2,11 +2,14 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"runtime"
 	"syscall"
 	"time"
 
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/realm"
 	"golang.org/x/sys/unix"
 )
 
@@ -31,14 +34,19 @@ func unshareAndRun(ctx context.Context, cmd *exec.Cmd) error {
 		return err
 	}
 	syscall.Umask(0022)
-	return runProcessGroup(ctx, cmd)
+	cleanup, err := nettracer.PrepareCommand(cmd, realm.Userland)
+	if err != nil {
+		return err
+	}
+	return errors.Join(runProcessGroup(ctx, cmd), cleanup())
 }
 
 func runProcessGroup(ctx context.Context, cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &unix.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: unix.SIGTERM,
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = new(unix.SysProcAttr)
 	}
+	cmd.SysProcAttr.Setpgid = true
+	cmd.SysProcAttr.Pdeathsig = unix.SIGTERM
 	if err := cmd.Start(); err != nil {
 		return err
 	}

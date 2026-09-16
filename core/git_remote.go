@@ -29,6 +29,8 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	"github.com/dagger/dagger/network"
@@ -312,6 +314,15 @@ func (repo *RemoteGitRepository) setupWithSSHAuthSock(ctx context.Context, sshAu
 	}
 
 	opts = append(opts, gitutil.WithExec(func(ctx context.Context, cmd *exec.Cmd) error {
+		networkRealm := realm.FromContext(ctx)
+		if !networkRealm.Valid() {
+			networkRealm = realm.Userland
+		}
+		cleanup, err := nettracer.PrepareCommand(cmd, networkRealm)
+		if err != nil {
+			return fmt.Errorf("prepare git network cgroup: %w", err)
+		}
+		defer func() { _ = cleanup() }()
 		return runWithStandardUmaskAndNetOverride(ctx, cmd, "", resolvPath, query.CleanMountNS())
 	}))
 

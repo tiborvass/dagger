@@ -27,7 +27,9 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/ebpf/nettracer"
 	"github.com/dagger/dagger/engine/engineutil/resources"
+	"github.com/dagger/dagger/engine/realm"
 	"github.com/dagger/dagger/engine/slog"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -818,7 +820,7 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
 
 	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
-		return net.Listen("tcp", "127.0.0.1:0")
+		return realm.Daggerland.Listen(ctx, "tcp", "127.0.0.1:0")
 	})
 	if err != nil {
 		return fmt.Errorf("internal telemetry proxy listen: %w", err)
@@ -1123,7 +1125,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
 
 	httpListener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
-		return net.Listen("tcp", "127.0.0.1:0")
+		return realm.Daggerland.Listen(ctx, "tcp", "127.0.0.1:0")
 	})
 	if err != nil {
 		return fmt.Errorf("listen for nested client: %w", err)
@@ -1447,6 +1449,13 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
+	var unregisterNetworkCgroup func() error
+	state.cleanups.Add("remove network cgroup attribution", func() error {
+		if unregisterNetworkCgroup == nil {
+			return nil
+		}
+		return unregisterNetworkCgroup()
+	})
 	state.cleanups.Add("runc delete container", func() error {
 		return deleteContainer(ctx, state.id, cgroups.IsCgroup2UnifiedMode(), c.Runc.Delete, func(recoveryCtx context.Context) error {
 			return killContainerCgroup(recoveryCtx, state.id, state.spec.Linux.CgroupsPath)
@@ -1454,6 +1463,21 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	})
 
 	cgroupPath := state.spec.Linux.CgroupsPath
+	if cgroupPath != "" {
+		fullCgroupPath := filepath.Join("/sys/fs/cgroup", cgroupPath)
+		if err := os.MkdirAll(fullCgroupPath, 0o755); err != nil {
+			return fmt.Errorf("create network accounting cgroup: %w", err)
+		}
+		var err error
+		unregisterNetworkCgroup, err = nettracer.RegisterCgroupRealm(
+			fullCgroupPath,
+			execRealm(state.execMD),
+		)
+		if err != nil {
+			return fmt.Errorf("register network accounting cgroup: %w", err)
+		}
+	}
+
 	// Wake the existing sampler when runc starts. The cgroup may not exist at
 	// that point; the final cleanup sample also covers short executions.
 	var readingsStarted chan struct{}
@@ -1741,4 +1765,11 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 	emitOTelExecSplit(ctx, state.id, profStartWall, profStartedWallTime, endWall, runErr, profArgv)
 	return exitError(ctx, state.exitCodePath, runErr, state.procInfo.Meta.ValidExitCodes)
+}
+
+func execRealm(md *ExecutionMetadata) realm.Realm {
+	if md != nil && md.DaggerlandRealm {
+		return realm.Daggerland
+	}
+	return realm.Userland
 }
