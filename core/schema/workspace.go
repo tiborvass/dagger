@@ -1264,6 +1264,17 @@ func (s *workspaceSchema) workspaceOverlayRootfs(ctx context.Context, ws *core.W
 	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 }
 
+// workspaceGitignoredOverlayRootfs resolves the complete workspace view while
+// pruning host content ignored by Git. Overlay edits are applied after the
+// host-side filter, so generated or explicitly staged paths still win even
+// when an existing ignore rule matches them.
+func (s *workspaceSchema) workspaceGitignoredOverlayRootfs(ctx context.Context, ws *core.Workspace) (dagql.ObjectResult[*core.Directory], error) {
+	if ws == nil {
+		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("workspace is required")
+	}
+	return s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, true)
+}
+
 func requireLocalWorkspace(ws *core.Workspace, operation string) error {
 	if ws == nil {
 		return fmt.Errorf("workspace is required")
